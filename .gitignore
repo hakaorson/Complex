@@ -1,0 +1,9 @@
+Data/Yeast/pictures
+Data/Yeast/first_stage_data
+Data/Yeast/embedding/uniprotkb_ids
+Data/Yeast/embedding/deepwalk
+**/**.pt
+**/**.png
+**/__pycache__
+Data/Yeast/compare
+.vscode/
