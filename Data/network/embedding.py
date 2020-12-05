@@ -36,7 +36,10 @@ def read_edges(edges_path):
     nodes, edges = set(), list()
     with open(edges_path) as f:
         for line in f:
-            linelist = line.strip().split('\t')
+            if '\t' in line:
+                linelist = line.strip().split('\t')
+            else:
+                linelist = line.strip().split(' ')
             edges.append(linelist)
             for singleid in linelist[:2]:
                 nodes.add(singleid)
@@ -472,6 +475,7 @@ def main(name):
     edge_feats = compute_edge_feats(name, edges, uniprotkb_datas)
     writebackdictfeat(node_feats, name+'/nodes_feat')
     writebackdictfeat(edge_feats, name+'/edges_feat')
+    
 
 
 if __name__ == "__main__":

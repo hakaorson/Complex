@@ -11,6 +11,8 @@ import numpy as np
 from sklearn import preprocessing
 from multiprocessing import pool as mtp
 from matplotlib import pyplot as plt
+from refer import runinpy3
+import subprocess
 
 
 def read_datas(node_path, edge_path):
@@ -263,17 +265,29 @@ def get_global_nxgraph(node_path, edge_path, direct):
     return nx_graph
 
 
-def first_stage(save_path, recompute=True, direct=False, graphname="DIP", benchname="CYC2008", refername="coach"):
-    if not (os.path.exists("network/{}/nodes_feat".format(graphname)) and os.path.exists("network/{}/edges_feat".format(graphname))):
-        print("reconstruc feat")
-        embedding.main(graphname)
-    assert(os.path.exists("bench/{}/nodes_feat".format(benchname)))
-    if not recompute and os.path.exists(save_path):
-        with open(save_path, 'rb') as f:
+def trainmodel_datasets(recompute=False, direct=False, graphname="DIP", benchname="CYC2008", refername="coach", basedir=None):
+    basedir = basedir if basedir else os.getcwd()
+    tarin_datasets_path = basedir + "/datasets/tarin_datasets/{}_{}_{}".format(
+        graphname, benchname, refername)
+    refer_results_path = basedir + "/datasets/refer_results/{}_{}".format(
+        graphname,  refername)
+    edges_path = basedir + "/network/{}/edges".format(graphname)
+    nodesfeat_path = basedir + "/network/{}/nodes_feat".format(graphname)
+    edgesfeat_path = basedir + "/network/{}/edges_feat".format(graphname)
+    if not recompute and os.path.exists(tarin_datasets_path):
+        with open(tarin_datasets_path, 'rb') as f:
             return pickle.load(f)
-    '''
-    下面是读取点数据，和边数据，并做特征初始化处理
-    '''
+    # bench必须存在
+    assert(os.path.exists(basedir + "/bench/{}/complexes".format(benchname)))
+    assert((os.path.exists(nodesfeat_path)
+            and os.path.exists(edgesfeat_path)))  # 特征必须准备好，因为特征是对于整个图来说的，不会经常变换
+
+    # refer方法的图跑出来
+    if not (os.path.exists(refer_results_path)):
+        print("recomstruct refer")
+        runinpy3.main(method_name=refername, edges_path=edges_path,
+                      result_path=refer_results_path, expand=False)
+
     nx_graph = get_global_nxgraph(node_path, edge_path, direct)
     # dgl_graph = single_data(nx_graph, direct).graph
     bench_data = read_bench(postive_path)
@@ -362,4 +376,4 @@ class BatchGenerator():
 
 
 if __name__ == "__main__":
-    pass
+    trainmodel_datasets()

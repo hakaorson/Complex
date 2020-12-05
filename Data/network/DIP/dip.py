@@ -110,7 +110,7 @@ def save_set(datas, path):
     with open(path, 'w')as f:
         for item in datas:
             single_line = (item if isinstance(item, str)
-                           else '\t'.join(item))+'\n'
+                           else ' '.join(item))+'\n'  # 必须用空格，由于后面的coach等方法调用
             f.write(single_line)
 
 
