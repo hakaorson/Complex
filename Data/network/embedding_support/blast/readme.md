@@ -1,0 +1,2 @@
+需要下载fasta文件，可以在uniprotkb上直接下载fasta格式的文件，然后交由pyl的机器运行，得到POSSUNM文件夹
+之后再整合到一起

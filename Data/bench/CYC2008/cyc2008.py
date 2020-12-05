@@ -8,7 +8,6 @@ def readmap(path):
             keys = linelist[0].split(',')
             value = linelist[1]
             for key in keys:
-                assert(key not in res.keys())
                 res[key] = value
     return res
 
@@ -43,17 +42,20 @@ def reid_genename_uniprot(complexes_genename, maps):
 def save(datas, path):
     with open(path, 'w') as f:
         for data in datas:
-            singleline = "\t".join(data)+'\n'
+            singleline = " ".join(data)+'\n'
             f.write(singleline)
 
 
 if __name__ == "__main__":
-    cyccomlex = 'CYC2008_complex'
-    cycmap = "CYC2008_map"
-    cycuniprot = "CYC2008"
-    cycgenename = "CYC2008_gene"
-    maps = readmap(cycmap)
-    complexes_genename = readcomplex(cyccomlex)
+    complexes_genename = readcomplex('origin_data/CYC2008')
+    ids = []
+    for comp in complexes_genename:
+        ids.extend(comp)
+    for single_id in list(set(ids)):
+        print(single_id, end=" ")
+    print()
+    # 之后需要先去uniprot下载id匹配数据
+    maps = readmap("origin_data/CYC2008_map")
     complexes_uniprot = reid_genename_uniprot(complexes_genename, maps)
-    save(complexes_uniprot, cycuniprot)
-    save(complexes_genename, cycgenename)
+    save(complexes_uniprot, "complexes")
+    save(complexes_genename, "complexes_gene")

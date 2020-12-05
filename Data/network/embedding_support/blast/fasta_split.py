@@ -22,11 +22,11 @@ def save_fasta(path, data):
 
 
 if __name__ == "__main__":
-    path = r"D:\code\gao_complex\Data\Yeast\embedding\blast"
-    datas = read_fasta(path+'\dip.fasta')
+    datas = read_fasta('origin_data/dip.fasta')
     begin, fileindex = 0, 0
     while begin < len(datas):
         end = begin+1000
-        save_fasta(path+'\dip{}.fasta'.format(fileindex), datas[begin:end])
+        save_fasta(
+            'origin_data/splited_dip_{}.fasta'.format(fileindex), datas[begin:end])
         fileindex += 1
         begin = end

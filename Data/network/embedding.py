@@ -12,9 +12,10 @@ import subprocess
 
 def findSubcellWords(str_input):
     str_remove_head = re.sub('SUBCELLULAR LOCATION: ', "", str_input)
-    str_remove_bracket = re.sub('{.*}', "", str_remove_head)
-    str_remove_note = re.sub('Note=.*', "", str_remove_bracket)
-    str_splited = re.split('\.|;|,', str_remove_note)
+    str_remove_note = re.sub('Note=.*', "", str_remove_head)
+    str_remove_bracket = re.sub('{([^{}]*?)}', "", str_remove_note)
+
+    str_splited = re.split('\.|;|,', str_remove_bracket)
     result = []
     for single_str in str_splited:
         single_str = single_str.strip().capitalize()
@@ -31,21 +32,24 @@ def save(datas, path):
 
 
 # 读取edge
-def read_edges(graph_path):
-    nodes, edges = list(), list()
-    with open(graph_path) as f:
+def read_edges(edges_path):
+    nodes, edges = set(), list()
+    with open(edges_path) as f:
         for line in f:
-            linelist = tuple(line.strip().split(' '))
+            linelist = line.strip().split('\t')
             edges.append(linelist)
             for singleid in linelist[:2]:
-                nodes.append(singleid)
-    return list(set(nodes)), edges
+                nodes.add(singleid)
+    return list(nodes), edges
 
 
 # 读取graph
-def read_graph(graph_path):
-    nodes, edges = read_edges(graph_path)
-    res = nx.Graph()
+def construct_graph(graph_path, direction=True):
+    _, edges = read_edges(graph_path)
+    if direction:
+        res = nx.DiGraph()
+    else:
+        res = nx.Graph()
     for edge in edges:
         if len(edge) == 3:
             res.add_edge(edge[0], edge[1], weight=edge[2])
@@ -82,6 +86,7 @@ def read_uniprotkb(path):
                 ';') if linelist[goIndex] != '' else []
             data['subcell'] = findSubcellWords(
                 linelist[subcellIndex]) if linelist[subcellIndex] != '' else []
+            linelist[domainIndex] = linelist[domainIndex].strip()
             data['domain'] = linelist[domainIndex][:-
                                                    1].split(';') if linelist[domainIndex] != '' else []
             res[linelist[enterIndex]] = data
@@ -122,32 +127,45 @@ def compute_edge_feat_domain(graph, v0_domains, v1_domains):
     res = []
     v0_neis_1 = findNeisInGraph(graph, v0_domains, 1)
     v1_neis_1 = findNeisInGraph(graph, v1_domains, 1)
-    domain_weight = 0
-    direct_linknum = 0
-    for v0 in v0_domains:
-        for v1 in v1_domains:
-            if graph.has_node(v0) and graph.has_node(v1) and graph.has_edge(v0, v1):
-                domain_weight += int(graph[v0][v1]['weight'])
-                direct_linknum += 1
+
+    def find_links(v0_targets, v1_targets):
+        domain_weight = 0
+        direct_linknum = 0
+        for v0 in v0_targets:
+            for v1 in v1_targets:
+                if graph.has_node(v0) and graph.has_node(v1) and graph.has_edge(v0, v1):
+                    domain_weight += int(graph[v0][v1]['weight'])
+                    direct_linknum += 1
+        return [domain_weight, direct_linknum]
+
     res.append(len(set(v0_domains) & set(v1_domains)))  # 两个域有几个相同地
-    res.append(direct_linknum)  # 在域图里面链接的数目
-    res.append(domain_weight)  # 加权之后的结果
+    res.append(len(set(v0_domains) | set(v1_domains)))
+    res.append(len(set(v0_domains) - set(v1_domains)))
+    res.append(len(set(v1_domains) - set(v0_domains)))
+    res.extend(find_links(v0_domains, v1_domains))
+    res.extend(find_links(v0_neis_1, v1_neis_1))
     res.append(len(set(v0_neis_1) & set(v1_neis_1)))  # 一阶共同邻居
     return res
 
 
-# 计算亚细胞作用
-def compute_edge_feat_subcell(mapping, v0_subcellls, v1_subcells):
+def compute_edge_feat_subcell(graph, v0_subcells, v1_subcells):  # 计算亚细胞作用
     res = []
-    res.append(len(set(v0_subcellls) & set(v1_subcells)))
-    res.append(len(set(v0_subcellls) | set(v1_subcells)))
+    and_num = len(set(v0_subcells) & set(v1_subcells))
+    or_num = len(set(v0_subcells) | set(v1_subcells))
+    v0_neis_1 = findNeisInGraph(graph, v0_subcells, 2)
+    v1_neis_1 = findNeisInGraph(graph, v1_subcells, 2)
+    res.append(and_num)
+    res.append(or_num)
+    res.append(and_num/or_num if or_num else 0)
+    res.append(len(set(v0_neis_1) & set(v1_neis_1)))
     # print(res)
     return res
 
 
 class go_compute():
     def __init__(self, obopath, allproteingopath):
-        self.graph = obo_parser.GODag(obopath, optional_attrs="relationship")
+        self.graph = obo_parser.GODag(
+            obopath, optional_attrs="relationship", prt=None)
         self.computed_SV = {}
         self.lin_static, self.allproteinnum = self.static_allgo_info(
             allproteingopath)
@@ -316,7 +334,7 @@ class go_compute():
         wang相似性，取自徐斌师兄的论文
         两个蛋白质拆尊尊自己的go注释
         计算其中任意两个之间的go相似性
-        
+
         使用go图可以提取go的关系，其中parent是直接关系（表示is_a），而在relationship中的part_of关键字表示的是part_of的关系
         具体的计算过程可以从论文中得出
         '''
@@ -335,26 +353,35 @@ class go_compute():
         all_go_nums = len(set(v0_gos) | set(v1_gos))
         res.append(common_go_nums)
         res.append(all_go_nums)
+        res.append(common_go_nums/all_go_nums if all_go_nums else 0)
         return res
 
 
-def compute_edge_feats(edges, nodedatas):
-    domain_net = read_graph("domain/domain_graph")
-    subcell_map = read_mapping("subcell/mapping")
+def compute_edge_feats(name, edges, nodedatas):
+    domain_net = construct_graph(
+        "embedding_support/domain/domain_graph", direction=False)
+    subcell_map = construct_graph(
+        "embedding_support/subcell/subcell_graph", direction=True)
     go_computor = go_compute(
-        "go/go-basic.obo", "go/uniprot-filtered-reviewed_yes.tab")
-    res = {}
+        "embedding_support/go/origin_data/go-basic.obo", "embedding_support/go/origin_data/uniprot-filtered-reviewed_yes.tab")
+    protein_graph = construct_graph(name+'/edges')
+    res = []
+    notmatched_data = {'domain': [], 'subcell': [], 'go': [], 'seq': ""}
     for edge in edges:
         v0, v1 = edge
+        v0_data = nodedatas[v0] if v0 in nodedatas.keys() else notmatched_data
+        v1_data = nodedatas[v1] if v1 in nodedatas.keys() else notmatched_data
         tempEmb = {}
+        tempEmb['id'] = [" ".join(edge)]
         tempEmb['domain'] = compute_edge_feat_domain(
-            domain_net, nodedatas[v0]['domain'], nodedatas[v1]['domain'])
+            domain_net, v0_data['domain'], v1_data['domain'])
         tempEmb['subcell'] = compute_edge_feat_subcell(
-            subcell_map, nodedatas[v0]['subcell'], nodedatas[v1]['subcell'])
+            subcell_map, v0_data['subcell'], v1_data['subcell'])
         tempEmb['go'] = go_computor.compute_edge_feat_go(
-            nodedatas[v0]['go'], nodedatas[v1]['go'])
-        # TODO graph特征，共同一阶邻居
-        res[edge] = tempEmb
+            v0_data['go'], v1_data['go'])
+        tempEmb['neibor'] = [
+            len(set(protein_graph.neighbors(v0)) & set(protein_graph.neighbors(v1)))]
+        res.append(tempEmb)
     return res
 
 
@@ -367,84 +394,85 @@ def compute_node_feat_blast(mapping, node):
         return 420*[0.0]
 
 
-def deepwalk(nodes, edges):
+def deepwalk(name, nodes, edges, recompute=True):
     node_map = {}
     for index, node in enumerate(nodes):
         node_map[node] = index
-    with open("deepwalk/dipgraph", 'w') as f:
-        for v0, v1 in edges:
-            string = "{} {}\n".format(node_map[v0], node_map[v1])
-            f.write(string)
-    cmd = "deepwalk --input {} --output {} --format edgelist".format(
-        "deepwalk/dipgraph", "deepwalk/res")
-    # print(cmd)
-    if os.path.exists("deepwalk/res"):
-        os.remove("deepwalk/res")
-    subprocess.Popen(cmd)
-    while True:
-        if not os.path.exists("deepwalk/res"):
-            continue
-        time.sleep(3)
-        with open("deepwalk/res", 'r')as f:
-            next(f)
-            res = {}
-            for line in f:
-                line_list = list(line.strip().split(" "))
-                nodeid = nodes[int(line_list[0])]
-                res[nodeid] = line_list[1:]
-            return res
+    edges_path = "embedding_support/deepwalk/{}_edges".format(name)
+    embed_path = "embedding_support/deepwalk/{}_embed".format(name)
+    if recompute is False and os.path.exists(embed_path):
+        pass
+    else:
+        if os.path.exists(embed_path):
+            os.remove(embed_path)
+        with open(edges_path, 'w') as f:
+            for v0, v1 in edges:
+                string = "{} {}\n".format(node_map[v0], node_map[v1])
+                f.write(string)
+        cmd = ["deepwalk", "--input", os.path.abspath(
+            edges_path), "--output", os.path.abspath(embed_path), "--format", "edgelist"]
+        subprocess.Popen(cmd)  # TODO 暂时不需要执行
+        while True:
+            if not os.path.exists(embed_path):
+                time.sleep(1)
+            else:
+                time.sleep(3)
+                break
+    with open(embed_path, 'r')as f:
+        next(f)
+        res = {}
+        for line in f:
+            line_list = list(line.strip().split(" "))
+            nodeid = nodes[int(line_list[0])]
+            res[nodeid] = line_list[1:]
+        return res
 
 
-def compute_node_feats(nodes, edges, nodedatas):
-    blast_map = read_mapping("blast/POSSUM_DATA")
-    deepwalkres = deepwalk(nodes, edges)
+def compute_node_feats(name, nodes, edges, uniprot_data):
+    blast_map = read_mapping("embedding_support/blast/POSSUM_DATA")
+    deepwalkres = deepwalk(name, nodes, edges, False)
+    protein_default_size = sum([len(uniprot_data[key]['seq'])
+                                for key in uniprot_data.keys()])/len(uniprot_data.keys())
     # randomGCN = randomgcn(nodes, edges)
-    res = {}
+    res = []
     for node in nodes:
         tempEmb = {}
+        tempEmb['id'] = [node]
         tempEmb['blast'] = compute_node_feat_blast(blast_map, node)
         tempEmb['deepwalk'] = deepwalkres[node]
-        res[node] = tempEmb
+        tempEmb['len'] = [len(uniprot_data[node]['seq']) if node in uniprot_data.keys(
+        ) else int(protein_default_size)]
+        res.append(tempEmb)
     return res
 
 
-if __name__ == "__main__":
-    dippath = 'dip_edge_nofeat'
-    nodes, edges = read_edges(dippath)
-    # deepwalk(nodes, edges)  # TODO 只是测试一下，后面删除
-    save(nodes, 'uniprotkb_ids')
-    uniprotkb_path = 'uniprotkb_datas'
-    uniprotkb_datas = read_uniprotkb(uniprotkb_path)
-    node_feats = compute_node_feats(nodes, edges, uniprotkb_datas)
-    edge_feats = compute_edge_feats(edges, uniprotkb_datas)
+def writebackdictfeat(datas, path):
+    with open(path, 'w') as f:
+        example_data = datas[0]
+        names = []
+        for name in example_data.keys():
+            names.extend(
+                [name+'_'+str(index) for index in range(len(example_data[name]))])
+        f.write('\t'.join(names)+'\n')
+        for data in datas:
+            items = []
+            for key in data.keys():
+                items.extend(data[key])
+            items = list(map(str, items))
+            strings = '\t'.join(items)+'\n'
+            f.write(strings)
 
-    dip_node_path = 'dip_node'
-    dip_edge_path = 'dip_edge'
-    dip_edge_path_nofeat = 'dip_edge_nofeat'
-    with open(dip_edge_path, 'w') as f, open(dip_edge_path_nofeat, 'w') as fnofeat:
-        names = ['edges_id', 'domain_same', 'domain_direct_link', 'domain_direct_link_weight',
-                 'domain_skip_neibor', 'subcell_and', 'subcell_or', 'go_wang', 'go_lin']
-        f.write('\t'.join(names)+'\n')
-        for edge in edge_feats.keys():
-            datas = []
-            dict_datas = edge_feats[edge]
-            for key in dict_datas.keys():
-                datas.extend(dict_datas[key])
-            datas = list(map(float, datas))
-            short_datas = list(map(lambda num: "{:.2f}".format(num), datas))
-            strings = edge[0]+' ' + edge[1]+'\t'+'\t'.join(short_datas)+'\n'
-            f.write(strings)
-            fnofeat.write(edge[0]+' ' + edge[1]+'\n')
-    with open(dip_node_path, 'w') as f:
-        names = ['node_id']+['blast_{}'.format(i) for i in range(420)]
-        names.extend(['deepwalk_{}'.format(i) for i in range(64)])
-        f.write('\t'.join(names)+'\n')
-        for node in node_feats.keys():
-            datas = []
-            dict_datas = node_feats[node]
-            for key in dict_datas.keys():
-                datas.extend(dict_datas[key])
-            datas = list(map(float, datas))
-            short_datas = list(map(lambda num: "{:.2f}".format(num), datas))
-            strings = node+'\t'+'\t'.join(short_datas)+'\n'
-            f.write(strings)
+
+def main(name):
+    nodes, edges = read_edges(name+'/edges')
+    # 需要在uniprot下载数据，放置到对应的网络数据下
+    # 'Entry','Sequence','Subcellular location [CC]','Gene ontology IDs','Cross-reference (Pfam)'
+    uniprotkb_datas = read_uniprotkb(name+'/origin_data/uniprot_data')
+    node_feats = compute_node_feats(name, nodes, edges, uniprotkb_datas)
+    edge_feats = compute_edge_feats(name, edges, uniprotkb_datas)
+    writebackdictfeat(node_feats, name+'/nodes_feat')
+    writebackdictfeat(edge_feats, name+'/edges_feat')
+
+
+if __name__ == "__main__":
+    main("DIP")

@@ -1,9 +1,9 @@
 import os
 if __name__ == "__main__":
-    names = os.listdir("POSSUM")
+    names = os.listdir("origin_data/POSSUM")
     res = []
     for name in names:
-        with open("POSSUM/"+name, 'r') as f:
+        with open("origin_data/POSSUM/"+name, 'r') as f:
             next(f)
             datas = list(map(float, next(f).split(',')))
             short_datas = list(map(lambda num: "{:.2f}".format(num), datas))

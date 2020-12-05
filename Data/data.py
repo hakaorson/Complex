@@ -1,4 +1,5 @@
 import pandas as pd
+from network import embedding
 import random
 import networkx as nx
 import dgl
@@ -262,11 +263,14 @@ def get_global_nxgraph(node_path, edge_path, direct):
     return nx_graph
 
 
-def first_stage(node_path, edge_path, postive_path, middle_path, save_path, reload=True, direct=False):
-    if not reload and os.path.exists(save_path):
-        with open(save_path, 'rb')as f:
-            result = pickle.load(f)
-        return result
+def first_stage(save_path, recompute=True, direct=False, graphname="DIP", benchname="CYC2008", refername="coach"):
+    if not (os.path.exists("network/{}/nodes_feat".format(graphname)) and os.path.exists("network/{}/edges_feat".format(graphname))):
+        print("reconstruc feat")
+        embedding.main(graphname)
+    assert(os.path.exists("bench/{}/nodes_feat".format(benchname)))
+    if not recompute and os.path.exists(save_path):
+        with open(save_path, 'rb') as f:
+            return pickle.load(f)
     '''
     下面是读取点数据，和边数据，并做特征初始化处理
     '''
