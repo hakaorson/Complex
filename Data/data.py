@@ -1,47 +1,30 @@
-import pandas as pd
-from network import embedding
-import random
-import networkx as nx
-import dgl
-import torch
+import os
 import pickle
 import queue
-import os
-import numpy as np
-from sklearn import preprocessing
-from multiprocessing import pool as mtp
-from matplotlib import pyplot as plt
-from refer import runinpy3
+import random
 import subprocess
+from multiprocessing import pool as mtp
+
+import dgl
+import networkx as nx
+import numpy as np
+import pandas as pd
+import torch
+from matplotlib import pyplot as plt
+from sklearn import preprocessing
+
+from Data.refer import runinpy3
 
 
-def read_datas(node_path, edge_path):
-    nodes, nodematrix = [], []
-    edges, edgematrix = [], []
-
-    with open(node_path, 'r') as f:
-        nodefeat_names = next(f).strip().split('\t')
-        index_deepwalk = []
-        for index, name in enumerate(nodefeat_names):
-            if "deepwalk" in name:
-                index_deepwalk.append(index)
-        for nodedata in f:
-            nodedata_splited = nodedata.strip().split('\t')
-            node_id = nodedata_splited[0]
-            node_feat = list(map(float, nodedata_splited[1:]))
-            nodes.append(node_id)
-            nodematrix.append(
-                node_feat[min(index_deepwalk):max(index_deepwalk)+1])
-
-    with open(edge_path, 'r')as f:
+def get_datas(data_path):
+    ids, datas = [], []
+    with open(data_path, 'r') as f:
         next(f)
-        for edgedata in f:
-            edgedata_splited = edgedata.strip().split('\t')
-            v0, v1 = edgedata_splited[0].split(' ')
-            edge_feat = list(map(float, edgedata_splited[1:]))
-            edges.append([v0, v1])
-            edgematrix.append(edge_feat)
-    return nodes, nodematrix, edges, edgematrix
+        for item in f:
+            item_splited = item.strip().split('\t')
+            ids.append(item_splited[0])
+            datas.append(list(map(float, item_splited[1:])))
+    return ids, datas
 
 
 # 数据预处理，一些归一化等等
@@ -53,35 +36,43 @@ def dataprocess(matrix):
 
 def subgraphs(complexes, graph):
     res = []
+    all_complex_nodes = set()
+    all_graph_nodes = set(graph.nodes)
     for comp in complexes:
+        all_complex_nodes = all_complex_nodes | comp
         subgraph = nx.subgraph(graph, comp)
         subgraph_bi = nx.Graph(subgraph)  # 转换为有向图求解
         sub_components = nx.connected_components(subgraph_bi)
         for sub_component in sub_components:
             res.append(sub_component)
+    print("has {} protein not in graph".format(
+        len(all_complex_nodes-all_graph_nodes)))
     return res
 
 
 def get_random_graphs(graph, l_list, target, multi=False):
     # 好像多进程版本并没有太多效果
+    print("produce random graphs, target {}".format(target))
     res = list()
     if multi:
         pool = mtp.Pool(processes=5)
         for i in range(target):
             size = random.choice(l_list)
             res.append(pool.apply_async(
-                get_single_random_graph_nodes, args=(graph, size)))
+                get_single_random_graph_nodes, args=(graph, size, i)))
         pool.close()
         pool.join()
         return [item.get() for item in res]
     else:
         for i in range(target):
             size = random.choice(l_list)
-            res.append(get_single_random_graph_nodes(graph, size))
+            res.append(get_single_random_graph_nodes(graph, size, i))
         return res
 
 
-def get_single_random_graph_nodes(graph, size):  # 这种随机化结果产生的区分度过强，看有没有其他随机的方案
+# 这种随机化结果产生的区分度过强，看有没有其他随机的方案
+def get_single_random_graph_nodes(graph, size, index):
+    print("random graph index {}".format(index))
     # 注意随机游走的时候将有向图当成无向图处理
     all_nodes = list(graph.nodes.keys())  # 按照权重取值
     all_node_weights = [graph.degree(node) for node in all_nodes]
@@ -128,7 +119,7 @@ def get_single_random_graph_nodes(graph, size):  # 这种随机化结果产生�
     return res
 
 
-def read_bench(path):
+def read_complexes(path):
     res = list()
     with open(path, 'r')as f:
         for line in f:
@@ -180,12 +171,11 @@ def remove_duplicate(complexes, targets):
     return res
 
 
-def showsubgraphs(graph, nodelists, path):
-    os.makedirs(path, exist_ok=True)
+def savesubgraphs(graph, nodelists, path):
     for index, nodes in enumerate(nodelists):
         subgraph = nx.subgraph(graph, nodes)
         nx.draw(subgraph)
-        plt.savefig(path+"/{}".format(index))
+        plt.savefig(path+"_{}".format(index))
         plt.close()
 
 
@@ -199,8 +189,7 @@ class single_data:
     def __init__(self, graph, direct, label=None):
         self.label = label
         self.graph = self.dgl_graph(graph)
-        self.feat = torch.tensor(self.get_default_feature(
-            graph, direct), dtype=torch.float32).reshape(1, -1)
+        self.feat = self.get_default_feature(graph, direct)
 
     def dgl_graph(self, graph: nx.Graph):
         res = dgl.DGLGraph()
@@ -247,11 +236,14 @@ class single_data:
 
 
 def get_global_nxgraph(node_path, edge_path, direct):
+    print("reading graph")
     # 获取图数据
-    nodes, nodematrix, edges, edgematrix = read_datas(node_path, edge_path)
+    nodes, nodematrix = get_datas(node_path)
+    edges, edgematrix = get_datas(edge_path)
+    edges = [list(item.split(' ')) for item in edges]
     # 归一化处理
     # nodematrix = dataprocess(nodematrix)
-    edgematrix = dataprocess(edgematrix)
+    # edgematrix = dataprocess(edgematrix)
     nx_graph = nx.DiGraph()
     for index, item in enumerate(nodematrix):
         nx_graph.add_node(nodes[index], w=item)
@@ -265,41 +257,53 @@ def get_global_nxgraph(node_path, edge_path, direct):
     return nx_graph
 
 
-def trainmodel_datasets(recompute=False, direct=False, graphname="DIP", benchname="CYC2008", refername="coach", basedir=None):
-    basedir = basedir if basedir else os.getcwd()
-    tarin_datasets_path = basedir + "/datasets/tarin_datasets/{}_{}_{}".format(
+def path_process(graphname, benchname, refername, basedir):
+    train_datasets_path = basedir + "datasets/train_datasets/{}_{}_{}".format(
         graphname, benchname, refername)
-    refer_results_path = basedir + "/datasets/refer_results/{}_{}".format(
+
+    refer_results_path = basedir + "datasets/refer_results/{}_{}".format(
         graphname,  refername)
-    edges_path = basedir + "/network/{}/edges".format(graphname)
-    nodesfeat_path = basedir + "/network/{}/nodes_feat".format(graphname)
-    edgesfeat_path = basedir + "/network/{}/edges_feat".format(graphname)
-    if not recompute and os.path.exists(tarin_datasets_path):
-        with open(tarin_datasets_path, 'rb') as f:
+    refer_results_expand_path = refer_results_path+'_expand'
+    select_datasets_path = basedir + \
+        "datasets/select_datasets/{}_{}".format(graphname, refername)
+    select_datasets_expand_path = select_datasets_path+'_expand'
+
+    pictures_dir = basedir + "datasets/pictures/"
+    bench_path = basedir + "bench/{}/complexes".format(benchname)
+    edges_path = basedir + "network/{}/edges".format(graphname)
+    nodesfeat_path = basedir + \
+        "network/{}/nodes_feat_processed".format(graphname)
+    edgesfeat_path = basedir + \
+        "network/{}/edges_feat_processed".format(graphname)
+    return train_datasets_path, refer_results_path, refer_results_expand_path, select_datasets_path, select_datasets_expand_path, pictures_dir, bench_path, edges_path, nodesfeat_path, edgesfeat_path
+
+
+def trainmodel_datasets(recompute=False, direct=False, graphname="DIP", benchname="CYC2008", refername="coach", basedir=""):
+    train_datasets_path, refer_results_path, refer_results_expand_path, select_datasets_path, select_datasets_expand_path, pictures_dir, bench_path, edges_path, nodesfeat_path, edgesfeat_path = path_process(
+        graphname, benchname, refername, basedir)
+    if not recompute and os.path.exists(train_datasets_path):
+        with open(train_datasets_path, 'rb') as f:
+            print('train_datasets exits, directly return')
+            # 注意必须是在哪写的数据，就在哪解析，不能在data.py运行存储的数据，然后在first_stage解析
             return pickle.load(f)
     # bench必须存在
-    assert(os.path.exists(basedir + "/bench/{}/complexes".format(benchname)))
+    assert(os.path.exists(bench_path))
     assert((os.path.exists(nodesfeat_path)
             and os.path.exists(edgesfeat_path)))  # 特征必须准备好，因为特征是对于整个图来说的，不会经常变换
 
     # refer方法的图跑出来
-    if not (os.path.exists(refer_results_path)):
-        print("recomstruct refer")
+    if (not (os.path.exists(refer_results_path))) or recompute:
         runinpy3.main(method_name=refername, edges_path=edges_path,
-                      result_path=refer_results_path, expand=False)
-
-    nx_graph = get_global_nxgraph(node_path, edge_path, direct)
+                      result_path=refer_results_path, expand=False, basedir=basedir+"refer")
+    nx_graph = get_global_nxgraph(nodesfeat_path, edgesfeat_path, direct)
     # dgl_graph = single_data(nx_graph, direct).graph
-    bench_data = read_bench(postive_path)
-    middle_data = read_bench(middle_path)
-    random_target = (len(bench_data)+len(middle_data))  # 先多取一些，再截取需要的部分
+    bench_data = read_complexes(bench_path)
+    middle_data = read_complexes(refer_results_path)
     random_data = get_random_graphs(
-        nx_graph, [len(item) for item in bench_data + middle_data], random_target)  # TODO 设定随机的数目
+        nx_graph, [len(item) for item in bench_data + middle_data], (len(bench_data)+len(middle_data)), multi=False)  # TODO 设定随机的数目
 
-    # TODO 这里的处理对不对，是不是从逻辑上来说就不应该出现子图以及合并的情况
     # 接下来需要提取真正的graph，找出所有的subgraph
     bench_data = subgraphs(bench_data, nx_graph)
-    middle_data = subgraphs(middle_data, nx_graph)
     # 接下来归并处理
     bench_data = merged_data(bench_data)  # 621->555
     middle_data = merged_data(middle_data)  # 888->416
@@ -308,9 +312,9 @@ def trainmodel_datasets(recompute=False, direct=False, graphname="DIP", benchnam
     middle_data = remove_duplicate(middle_data, bench_data)
     random_data = remove_duplicate(random_data, bench_data+middle_data)
     # 存储图片
-    # showsubgraphs(nx_graph, bench_data, "Data/Yeast/pictures/bench")
-    # showsubgraphs(nx_graph, middle_data, "Data/Yeast/pictures/middle")
-    # showsubgraphs(nx_graph, random_data, "Data/Yeast/pictures/random")
+    savesubgraphs(nx_graph, bench_data[:10], pictures_dir+"bench")
+    savesubgraphs(nx_graph, middle_data[:10], pictures_dir+"middle")
+    savesubgraphs(nx_graph, random_data[:10], pictures_dir+"random")
     # 整理成数据集
     all_datas = []
     all_datas.extend([item, 0] for item in bench_data)
@@ -319,7 +323,6 @@ def trainmodel_datasets(recompute=False, direct=False, graphname="DIP", benchnam
     # 多进程处理
     multi_res = []
     pool = mtp.Pool(processes=10)
-    # TODO 目前调试流程只选取500个
     for index, (item, label) in enumerate(all_datas):
         multi_res.append(pool.apply_async(
             get_singlegraph, args=(nx_graph, item, direct, label, index)))
@@ -327,53 +330,48 @@ def trainmodel_datasets(recompute=False, direct=False, graphname="DIP", benchnam
     pool.join()
     datasets = [item.get() for item in multi_res]
 
-    with open(save_path, 'wb') as f:
+    with open(train_datasets_path, 'wb') as f:
         pickle.dump(datasets, f)
     return datasets
 
 
-def second_stage(node_path, edge_path, candi_data, save_path, reload=True, direct=False):
-    if not reload and os.path.exists(save_path):
-        with open(save_path, 'rb')as f:
+def selectcomplex_datasets(recompute=False, direct=False, graphname="DIP", refername="coach", basedir=""):
+    train_datasets_path, refer_results_path, refer_results_expand_path, select_datasets_path, select_datasets_expand_path, pictures_dir, bench_path, edges_path, nodesfeat_path, edgesfeat_path = path_process(
+        graphname, "", refername, basedir)
+
+    # refer方法的图跑出来
+    if not (os.path.exists(refer_results_path)) or recompute:
+        runinpy3.main(method_name=refername, edges_path=edges_path,
+                      result_path=refer_results_path, expand=False, basedir=basedir+"refer")
+    refer_data = read_complexes(refer_results_path)
+    # refer方法的图跑出来
+    if not (os.path.exists(refer_results_expand_path)) or recompute:
+        runinpy3.main(method_name=refername, edges_path=edges_path,
+                      result_path=refer_results_expand_path, expand=True, basedir=basedir+"refer")
+    expand_refer_data = read_complexes(refer_results_expand_path)
+
+    if not recompute and os.path.exists(select_datasets_expand_path):
+        with open(select_datasets_expand_path, 'rb')as f:
             result = pickle.load(f)
-        return result
-    nx_graph = get_global_nxgraph(node_path, edge_path, direct)
+        return refer_data, expand_refer_data, result
+    nx_graph = get_global_nxgraph(nodesfeat_path, edgesfeat_path, direct)
     # datasets = [get_singlegraph(nx_graph, item, direct, -1)
     #             for item in candi_data]  # -1代表无意义
-    # TODO 注意那就不需要考虑不连通的情况，因为这是在我给定的图里面获取的
     # return datasets
     multi_res = []
     pool = mtp.Pool(processes=10)
-    for index, item in enumerate(candi_data):
+    for index, item in enumerate(expand_refer_data):
         multi_res.append(pool.apply_async(
             get_singlegraph, args=(nx_graph, item, direct, -1, index)))
     pool.close()
     pool.join()
-    datasets = [item.get() for item in multi_res]
-    with open(save_path, 'wb') as f:
-        pickle.dump(datasets, f)
-    return datasets
-
-
-class BatchGenerator():
-    def __init__(self, data, batch_size):
-        self.data = data
-        random.shuffle(self.data)
-        self.batch_size = batch_size if batch_size != -1 else len(self.data)
-        self.index = 0
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        try:
-            self.data[self.index+self.batch_size-1]  # 用于检查是否越界
-            b_data = self.data[self.index:self.index+self.batch_size]
-        except IndexError:
-            raise StopIteration()
-        self.index += self.batch_size
-        return b_data
+    result = [item.get() for item in multi_res]
+    with open(select_datasets_expand_path, 'wb') as f:
+        pickle.dump(result, f)
+    return refer_data, expand_refer_data, result
 
 
 if __name__ == "__main__":
-    trainmodel_datasets()
+    # trainmodel_datasets(recompute=True)
+    # selectcomplex_datasets()
+    pass

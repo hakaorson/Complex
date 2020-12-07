@@ -1,5 +1,6 @@
 import math
 import sys
+import numpy as np
 import re
 import networkx as nx
 import os
@@ -7,6 +8,7 @@ import time
 import queue
 import random
 from goatools import obo_parser
+import pandas as pd
 import subprocess
 
 
@@ -466,6 +468,44 @@ def writebackdictfeat(datas, path):
             f.write(strings)
 
 
+def get_datas(data_path):
+    datas = []
+    with open(data_path, 'r') as f:
+        names = list(next(f).strip().split('\t'))
+        for item in f:
+            item_splited = item.strip().split('\t')
+            datas.append([item_splited[0]]+list(map(float, item_splited[1:])))
+    return names, datas
+
+
+def processFeat(path, typ):
+    names, datas = get_datas(path)
+    df = pd.DataFrame(datas, columns=names)
+    if typ == "node":
+        df["len_0_log"] = df["len_0"].apply(np.log)
+        df["len_0_sqrt"] = df["len_0"].apply(np.sqrt)
+        df.drop(['len_0'], axis=1, inplace=True)
+    else:
+        df["domain_4"] = df["domain_4"].apply(np.log1p)
+        df["domain_5"] = df["domain_5"].apply(np.log1p)
+        df["domain_6"] = df["domain_6"].apply(np.log1p)
+        df["domain_7"] = df["domain_7"].apply(np.log1p)
+        df["domain_8"] = df["domain_8"].apply(np.log1p)
+        df["go_3"] = df["go_3"].apply(np.log1p)
+    new_names, new_datas = [], []
+    for name in df:
+        new_names.append(name)
+        new_datas.append(df[name].tolist())
+    with open(path+"_processed", 'w')as f:
+        f.write('\t'.join(new_names)+'\n')
+        for index in range(len(new_datas[0])):
+            the_id = new_datas[0][index]
+            datas = [new_datas[col][index]
+                     for col in range(1, len(new_names))]
+            new_line = [the_id]+['%.3f' % f for f in datas]
+            f.write('\t'.join(new_line)+'\n')
+
+
 def main(name):
     nodes, edges = read_edges(name+'/edges')
     # 需要在uniprot下载数据，放置到对应的网络数据下
@@ -475,8 +515,11 @@ def main(name):
     edge_feats = compute_edge_feats(name, edges, uniprotkb_datas)
     writebackdictfeat(node_feats, name+'/nodes_feat')
     writebackdictfeat(edge_feats, name+'/edges_feat')
-    
+    processFeat(name+'/nodes_feat', 'node')
+    processFeat(name+'/edges_feat', 'edge')
 
 
 if __name__ == "__main__":
-    main("DIP")
+    # main("DIP")
+    processFeat("DIP"+'/nodes_feat', 'node')
+    processFeat("DIP"+'/edges_feat', 'edge')
