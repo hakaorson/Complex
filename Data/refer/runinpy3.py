@@ -10,7 +10,8 @@ class baseMethod():
         self.res_path = res_path
 
     def run(self):
-        print("computing refer_data")
+        print("computing refer_data: {} {}".format(
+            self.graph_path, self.method_path))
         assert(os.path.exists(self.method_path))
         py2 = "D:\software\Anaconda\envs\python2.7\python.exe" if os.path.exists(
             "D:\software\Anaconda\envs\python2.7\python.exe") else "python2.7"
@@ -53,9 +54,9 @@ class dpclus_method(baseMethod):
                     f.write(item+'\n')
 
 
-class clique_method(baseMethod):
+class clique_percolation_method(baseMethod):
     def __init__(self, graph_path, res_path, expand, basedir):
-        super().__init__("clique", graph_path, res_path, expand, basedir)
+        super().__init__("clique_percolation", graph_path, res_path, expand, basedir)
 
     def writecomplexes(self, cmd_res):
         with open(self.res_path, 'w') as f:
@@ -78,14 +79,16 @@ class mcode_method(baseMethod):
         super().__init__("mcode", graph_path, res_path, expand, basedir)
 
     def writecomplexes(self, cmd_res):
-        res = []
+        res, index = [], 0
         start = False
-        for item in cmd_res:
+        while(index < len(cmd_res)):
             if start:
-                if len(item) and "\r" not in item:
-                    res.append(item)
-            if item == "molecular complex prediction\r\n":
+                if len(cmd_res[index]):
+                    res.append(cmd_res[index])
+                    index += 1
+            if index < len(cmd_res) and cmd_res[index].strip() == "molecular complex prediction":
                 start = True
+            index += 1
         with open(self.res_path, 'w') as f:
             for item in res:
                 f.write(item+'\n')
@@ -96,8 +99,8 @@ def get_method(name):
         return ipca_method
     if name == "dpclus":
         return dpclus_method
-    if name == "clique":
-        return clique_method
+    if name == "clique_percolation":
+        return clique_percolation_method
     if name == "mcode":
         return mcode_method
     if name == "coach":

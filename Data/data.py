@@ -279,13 +279,14 @@ def path_process(graphname, benchname, refername, basedir):
 
 
 def trainmodel_datasets(recompute=False, direct=False, graphname="DIP", benchname="CYC2008", refername="coach", basedir=""):
+    datasets_label = graphname+benchname+refername+('D'if direct else 'U')
     train_datasets_path, refer_results_path, refer_results_expand_path, select_datasets_path, select_datasets_expand_path, pictures_dir, bench_path, edges_path, nodesfeat_path, edgesfeat_path = path_process(
         graphname, benchname, refername, basedir)
     if not recompute and os.path.exists(train_datasets_path):
         with open(train_datasets_path, 'rb') as f:
             print('train_datasets exits, directly return')
             # 注意必须是在哪写的数据，就在哪解析，不能在data.py运行存储的数据，然后在first_stage解析
-            return pickle.load(f)
+            return pickle.load(f), datasets_label
     # bench必须存在
     assert(os.path.exists(bench_path))
     assert((os.path.exists(nodesfeat_path)
@@ -332,7 +333,7 @@ def trainmodel_datasets(recompute=False, direct=False, graphname="DIP", benchnam
 
     with open(train_datasets_path, 'wb') as f:
         pickle.dump(datasets, f)
-    return datasets
+    return datasets, datasets_label
 
 
 def selectcomplex_datasets(recompute=False, direct=False, graphname="DIP", refername="coach", basedir=""):
@@ -355,9 +356,6 @@ def selectcomplex_datasets(recompute=False, direct=False, graphname="DIP", refer
             result = pickle.load(f)
         return refer_data, expand_refer_data, result
     nx_graph = get_global_nxgraph(nodesfeat_path, edgesfeat_path, direct)
-    # datasets = [get_singlegraph(nx_graph, item, direct, -1)
-    #             for item in candi_data]  # -1代表无意义
-    # return datasets
     multi_res = []
     pool = mtp.Pool(processes=10)
     for index, item in enumerate(expand_refer_data):
@@ -365,10 +363,10 @@ def selectcomplex_datasets(recompute=False, direct=False, graphname="DIP", refer
             get_singlegraph, args=(nx_graph, item, direct, -1, index)))
     pool.close()
     pool.join()
-    result = [item.get() for item in multi_res]
+    datasets = [item.get() for item in multi_res]
     with open(select_datasets_expand_path, 'wb') as f:
-        pickle.dump(result, f)
-    return refer_data, expand_refer_data, result
+        pickle.dump(datasets, f)
+    return refer_data, expand_refer_data, datasets
 
 
 if __name__ == "__main__":

@@ -112,7 +112,7 @@ class Linear_process(torchnn.Module):
 class GCN_with_Topologi_classification(torchnn.Module):
     def __init__(self, nodefeatsize, edgefeatsize, graphfeatsize, hidden_size, gcn_layers, class_num):
         super().__init__()
-        self.name = "gcn_with_top0_classification"
+        self.name = "gcnwithtopo"
         self.nodeedge_feat_init = DGLInit(
             nodefeatsize, edgefeatsize, hidden_size)
         self.base_feat_init = torchnn.Linear(

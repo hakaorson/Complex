@@ -1,4 +1,5 @@
 from Model import graph_classify
+from sklearn.metrics import precision_score
 import torch
 import pickle
 import dgl
@@ -7,114 +8,55 @@ import os
 
 
 def collate(samples):
-    graphs, feats, labels = map(list, zip(*samples))
-    batch_graph = dgl.batch(graphs)
-    batch_feats = torch.tensor(feats, dtype=torch.float32)
+    train_graphs, train_feats, labels = map(list, zip(*samples))
+    batch_graph = dgl.batch(train_graphs)
+    batch_feats = torch.tensor(train_feats, dtype=torch.float32)
     batch_labels = torch.tensor(labels, dtype=torch.long)
     return batch_graph, batch_feats, batch_labels
 
 
-def train(model, datas, vals, batchsize, path, epoch):
-    cross_loss = torch.nn.CrossEntropyLoss(
-        weight=torch.FloatTensor([1, 1, 1]))  # 这苦有问题
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
-    model.train()
-    for i in range(1, epoch+1):
-        epoch_loss = 0
-        data_gener = data.BatchGenerator(datas, batchsize)
-        for batch_data in data_gener:
-            batch_loss = 0
-            for item in batch_data:
-                target = torch.tensor(item[2], dtype=torch.long).reshape(-1)
-                predict = model(item[0], item[1])
-                loss = cross_loss(predict, target)
-                batch_loss += loss
-                epoch_loss += loss
-            optimizer.zero_grad()
-            batch_loss.backward()
-            optimizer.step()
-            # print('batch loss:', batch_loss.detach().numpy())
-        if i != 0 and i % 5 == 0:
-            os.makedirs(path, exist_ok=True)
-            torch.save(model.state_dict(), path+'/{}.pt'.format(i))
-
-        val_metrix = test(model, vals)
-        val_loss = 0
-        for item in vals:
-            target = torch.tensor(item[2], dtype=torch.long).reshape(-1)
-            predict = model(item[0], item[1])
-            val_loss += cross_loss(predict, target)
-        print('epoch {} loss:'.format(i), epoch_loss.detach().numpy() / len(datas),
-              'val loss:', val_loss.detach().numpy() / len(vals),
-              'val metrix:', val_metrix)
-
-
-def train_classification(model, datas, vals, batchsize, path, epoch):
+def train_classification(model, train_datas, val_datas, batchsize, path, epoch):
     cross_loss = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
     model.train()
     for i in range(1, epoch+1):
-        epoch_loss = 0
+        train_epoch_loss = []
         train_data_loader = torch.utils.data.DataLoader(
-            datas, batch_size=batchsize, shuffle=True, collate_fn=collate)
-        for index, (graphs, feats, label) in enumerate(train_data_loader):
-            prediction = model(graphs, feats)
-            tempsee = torch.nn.Softmax()(prediction)
-            loss = cross_loss(prediction, label)
+            train_datas, batch_size=batchsize, shuffle=True, collate_fn=collate)
+        for train_graphs, train_feats, train_labels in train_data_loader:
+            train_prediction = model(train_graphs, train_feats)
+            train_loss = cross_loss(train_prediction, train_labels)
             optimizer.zero_grad()
-            loss.backward()
+            train_loss.backward()
             optimizer.step()
-            epoch_loss += loss.detach().item()  # 每一个批次的损失
-        print(epoch_loss)
+            train_epoch_loss.append(train_loss.detach().item())  # 每一个批次的损失
 
         # validata
-        val_data_loader=
+        val_graphs, val_feats, val_labels = collate(val_datas)  # 产生一个batch
+        val_predictions = model(val_graphs, val_feats)
+        val_epoch_loss = cross_loss(
+            val_predictions, val_labels).detach().item()
+
+        val_maxindexs = torch.argmax(torch.nn.Softmax()(
+            val_predictions), -1).detach()
+        val_metrix = precision_score(
+            val_labels, val_maxindexs, average="micro")
+        print('epoch {} train_loss:'.format(i), sum(train_epoch_loss)/len(train_epoch_loss),
+              'val train_loss:', val_epoch_loss,
+              'val metrix:', val_metrix)
+
         # 存储模型
-        if i != 0 and i % 5 == 0:
+        if i != 0 and i % 2 == 0:
             os.makedirs(path, exist_ok=True)
             torch.save(model.state_dict(), path+'/{}.pt'.format(i))
 
 
-def test(model, datas):
-    labels = []
-    predicts = []
-    for item in datas:
-        labels.append(item[2])
-        pred = model(item[0], item[1])
-        pred = list(pred[0].detach().numpy())
-        predindex = pred.index(max(pred))
-        predicts.append(predindex)
-        pass
-    static_recall = [[0, 0], [0, 0], [0, 0]]
-    static_precision = [[0, 0], [0, 0], [0, 0]]
-    for index in range(len(datas)):
-        truelabel = labels[index]
-        predictlabel = predicts[index]
-        static_recall[truelabel][1] += 1
-        static_precision[predictlabel][1] += 1
-        if truelabel == predictlabel:
-            static_recall[truelabel][0] += 1
-            static_precision[predictlabel][0] += 1
-    res = 0
-    for index in range(len(static_recall)):
-        recallnum = static_recall[index][0] / \
-            static_recall[index][1] if static_recall[index][1] else 1
-        precinum = static_precision[index][0] / \
-            static_precision[index][1] if static_precision[index][1] else 1
-        f1num = 2*recallnum*precinum / \
-            (recallnum+precinum) if recallnum+precinum else 0
-        # print("recall {},prec {},f1 {}".format(recallnum, precinum, f1num))
-        res += f1num
-    return res
-
-
-def select(model, datas, thred):
+def select(model, datas, thred=0.3):
+    select_graphs, select_feats, _ = collate(datas)
+    predictions = torch.nn.Softmax()(model(select_graphs, select_feats))
     res = []
-    for item in datas:
-        pred = model(item[0], item[1])
-        pred = list(pred[0].detach().numpy())
-        predindex = pred.index(max(pred))
-        if predindex == 0 or pred[0] >= thred:
+    for item in predictions:
+        if item[0] >= 0.3:
             res.append(True)
         else:
             res.append(False)
