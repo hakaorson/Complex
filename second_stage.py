@@ -1,5 +1,5 @@
 from Data import data
-from Model import graph_classify
+from Model import models
 from Model import flow
 import random
 import torch
@@ -13,19 +13,20 @@ from Check import metrix
 if __name__ == "__main__":
     random.seed(666)
     normal_datas, expand_datas, datas = data.selectcomplex_datasets(
-        basedir="Data/", recompute=False, refername="clique_percolation")
+        basedir="Data/", recompute=True, refername="coach", typ="classification")
     datas = [[item.graph, item.feat, item.label] for item in datas]
-    model = graph_classify.GCN_with_Topologi_classification(
+    model = models.GCN_with_Topologi(
         nodefeatsize=486,
         edgefeatsize=19,
         graphfeatsize=10,
         hidden_size=128,
         gcn_layers=2,
-        class_num=3
+        output_size=3,
+        activate=None
     )
     model.load_state_dict(torch.load(
-        r"Model/saved_models/gcnwithtopo_DIPCYC2008coachU_12071208/16.pt"))
-    res = flow.select(model, datas, thred=0.3)
+        r"Model/saved_models/gcnwithtopo_CYC2008_DIP_coach_classification_U_12081355/8.pt"))
+    res = flow.select_classification(model, datas, thred=0.1)
     expand_datas_selected = []
     for index, val in enumerate(res):
         if val:

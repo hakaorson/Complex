@@ -90,7 +90,7 @@ class GCN_readout(torchnn.Module):
 
 
 class Linear_process(torchnn.Module):
-    def __init__(self, input_size, hidden_size, output_size, layer_num):
+    def __init__(self, input_size, hidden_size, output_size, layer_num=1):
         super().__init__()
         self.layers = torchnn.ModuleList()
 
@@ -109,8 +109,8 @@ class Linear_process(torchnn.Module):
         return data
 
 
-class GCN_with_Topologi_classification(torchnn.Module):
-    def __init__(self, nodefeatsize, edgefeatsize, graphfeatsize, hidden_size, gcn_layers, class_num):
+class GCN_with_Topologi(torchnn.Module):
+    def __init__(self, nodefeatsize, edgefeatsize, graphfeatsize, hidden_size, gcn_layers, output_size, activate):
         super().__init__()
         self.name = "gcnwithtopo"
         self.nodeedge_feat_init = DGLInit(
@@ -120,7 +120,9 @@ class GCN_with_Topologi_classification(torchnn.Module):
 
         self.gcn_process = GCN_process(hidden_size, gcn_layers)
         self.gcn_predict = GCN_readout(hidden_size)
-        self.linear = Linear_process(hidden_size*2, hidden_size, class_num, 1)
+        self.linear = Linear_process(
+            hidden_size*2, hidden_size, output_size, layer_num=1)
+        self.final_activate = activate
 
     def forward(self, dgl_data, base_data):
         dgl_data_init = self.nodeedge_feat_init(dgl_data)
@@ -129,7 +131,7 @@ class GCN_with_Topologi_classification(torchnn.Module):
 
         base_feat = self.base_feat_init(base_data)
         predict = self.linear(torch.cat([dgl_data_feat, base_feat], -1))
-        return predict
+        return self.final_activate(predict) if self.final_activate else predict
 
 
 if __name__ == '__main__':

@@ -2,6 +2,7 @@ import os
 import pickle
 import queue
 import random
+import shutil
 import subprocess
 from multiprocessing import pool as mtp
 
@@ -13,7 +14,7 @@ import torch
 from matplotlib import pyplot as plt
 from sklearn import preprocessing
 
-from Data.refer import runinpy3
+from Data.refer import refermethods
 
 
 def get_datas(data_path):
@@ -154,21 +155,14 @@ def merged_data(items):
     return res
 
 
-# 去重处理
-# 去重处理需要按照score NA的0.25作为分界
-def remove_duplicate(complexes, targets):
+def complex_score(complexes, targets):
     af_matrix = [[0 for j in range(len(targets))]for i in range(
         len(complexes))]
     for i in range(len(complexes)):
         for j in range(len(targets)):
             comp, targ = complexes[i], targets[j]
             af_matrix[i][j] = pow(len(comp & targ), 2)/(len(comp)*len(targ))
-    res = []
-    for index, comp in enumerate(complexes):
-        if max(af_matrix[index]) >= 0.25:
-            continue
-        res.append(comp)
-    return res
+    return [max(af_matrix[index]) for index, comp in enumerate(complexes)]
 
 
 def savesubgraphs(graph, nodelists, path):
@@ -179,7 +173,7 @@ def savesubgraphs(graph, nodelists, path):
         plt.close()
 
 
-def get_singlegraph(biggraph, nodes, direct, label, index):
+def get_singlegraph(biggraph, nodes, label, direct, index):
     print('processing {}'.format(index))
     subgraph = biggraph.subgraph(nodes)
     return single_data(subgraph, direct, label)
@@ -257,15 +251,16 @@ def get_global_nxgraph(node_path, edge_path, direct):
     return nx_graph
 
 
-def path_process(graphname, benchname, refername, basedir):
-    train_datasets_path = basedir + "datasets/train_datasets/{}_{}_{}".format(
-        graphname, benchname, refername)
+def path_process(graphname, benchname, refername, basedir, typ, direct):
+    train_datasets_path = basedir + "datasets/train_datasets/{}_{}_{}_{}_{}".format(
+        benchname, graphname, refername, typ, "D" if direct else "U")
 
     refer_results_path = basedir + "datasets/refer_results/{}_{}".format(
         graphname,  refername)
     refer_results_expand_path = refer_results_path+'_expand'
     select_datasets_path = basedir + \
-        "datasets/select_datasets/{}_{}".format(graphname, refername)
+        "datasets/select_datasets/{}_{}_{}_{}".format(
+            graphname, refername, typ, "D" if direct else "U")
     select_datasets_expand_path = select_datasets_path+'_expand'
 
     pictures_dir = basedir + "datasets/pictures/"
@@ -278,24 +273,74 @@ def path_process(graphname, benchname, refername, basedir):
     return train_datasets_path, refer_results_path, refer_results_expand_path, select_datasets_path, select_datasets_expand_path, pictures_dir, bench_path, edges_path, nodesfeat_path, edgesfeat_path
 
 
-def trainmodel_datasets(recompute=False, direct=False, graphname="DIP", benchname="CYC2008", refername="coach", basedir=""):
-    datasets_label = graphname+benchname+refername+('D'if direct else 'U')
+def data_fusion_to_classification(bench_data, middle_data, random_data):
+    # 接下来去重
+    middle_scores = complex_score(middle_data, bench_data)
+    middle_data_selected = []
+    for index, comp in enumerate(middle_data):
+        if middle_scores[index] <= 0.25:
+            middle_data_selected.append(comp)
+    random_scores = complex_score(random_data, bench_data+middle_data)
+    random_data_selected = []
+    for index, comp in enumerate(random_data):
+        if random_scores[index] <= 0.25:
+            random_data_selected.append(comp)
+    # 存储图片
+    # savesubgraphs(nx_graph, bench_data[:10], pictures_dir+"bench")
+    # savesubgraphs(nx_graph, middle_data[:10], pictures_dir+"middle")
+    # savesubgraphs(nx_graph, random_data[:10], pictures_dir+"random")
+    # 整理成数据集
+    all_datas = []
+    all_datas.extend([[item, 0] for item in bench_data])
+    all_datas.extend([[item, 1] for item in middle_data_selected])
+    all_datas.extend([[item, 2] for item in random_data_selected])
+    return all_datas
+
+
+def data_fusion_to_regression(bench_data, middle_data, random_data):
+    all_datas = random_data+middle_data+bench_data
+    all_scores = complex_score(all_datas, bench_data)
+    return [[all_datas[index], all_scores[index]] for index in range(len(all_datas))]
+
+
+def construct_and_storation_subgraphs(path, graph, subs, direct):
+    storation_size = 500
+    begin_index = 0
+    datasets = []
+    if os.path.exists(path):
+        shutil.rmtree(path)
+    os.makedirs(path)
+    while begin_index < len(subs):
+        next_index = min(begin_index+storation_size, len(subs))
+        cur_refer_data = subs[begin_index:next_index]
+        cur_datasets = [get_singlegraph(
+            graph, item[0],  item[1], direct, index+begin_index) for index, item in enumerate(cur_refer_data)]
+        datasets.extend(cur_datasets)
+        with open(path+'/'+str(begin_index), 'wb') as f:
+            pickle.dump(cur_datasets, f)
+        begin_index = next_index
+    return datasets
+
+
+def reload_subgraphs(path):
+    file_names = os.listdir(path)
+    result = []
+    for file_name in file_names:
+        with open(path+'/'+file_name, 'rb')as f:
+            result.extend(pickle.load(f))
+    return result
+
+
+def trainmodel_datasets(recompute=False, direct=False, graphname="DIP", benchname="CYC2008", refername="coach", basedir="", typ="classification"):
     train_datasets_path, refer_results_path, refer_results_expand_path, select_datasets_path, select_datasets_expand_path, pictures_dir, bench_path, edges_path, nodesfeat_path, edgesfeat_path = path_process(
-        graphname, benchname, refername, basedir)
+        graphname, benchname, refername, basedir, typ, direct)
     if not recompute and os.path.exists(train_datasets_path):
-        with open(train_datasets_path, 'rb') as f:
-            print('train_datasets exits, directly return')
-            # 注意必须是在哪写的数据，就在哪解析，不能在data.py运行存储的数据，然后在first_stage解析
-            return pickle.load(f), datasets_label
-    # bench必须存在
-    assert(os.path.exists(bench_path))
-    assert((os.path.exists(nodesfeat_path)
-            and os.path.exists(edgesfeat_path)))  # 特征必须准备好，因为特征是对于整个图来说的，不会经常变换
+        datasets = reload_subgraphs(train_datasets_path)
+        return datasets, os.path.basename(train_datasets_path)
 
     # refer方法的图跑出来
-    if (not (os.path.exists(refer_results_path))) or recompute:
-        runinpy3.main(method_name=refername, edges_path=edges_path,
-                      result_path=refer_results_path, expand=False, basedir=basedir+"refer")
+    refermethods.main(method_name=refername, edges_path=edges_path,
+                      result_path=refer_results_path, expand=False, basedir=basedir+"refer", recompute=recompute)
     nx_graph = get_global_nxgraph(nodesfeat_path, edgesfeat_path, direct)
     # dgl_graph = single_data(nx_graph, direct).graph
     bench_data = read_complexes(bench_path)
@@ -303,69 +348,45 @@ def trainmodel_datasets(recompute=False, direct=False, graphname="DIP", benchnam
     random_data = get_random_graphs(
         nx_graph, [len(item) for item in bench_data + middle_data], (len(bench_data)+len(middle_data)), multi=False)  # TODO 设定随机的数目
 
-    # 接下来需要提取真正的graph，找出所有的subgraph
+    # 接下来需要提取真正的graph，找出所有的subgraph，因为有些点是不存在的
     bench_data = subgraphs(bench_data, nx_graph)
     # 接下来归并处理
     bench_data = merged_data(bench_data)  # 621->555
     middle_data = merged_data(middle_data)  # 888->416
     random_data = merged_data(random_data)  # 129->99
-    # 接下来去重
-    middle_data = remove_duplicate(middle_data, bench_data)
-    random_data = remove_duplicate(random_data, bench_data+middle_data)
-    # 存储图片
-    savesubgraphs(nx_graph, bench_data[:10], pictures_dir+"bench")
-    savesubgraphs(nx_graph, middle_data[:10], pictures_dir+"middle")
-    savesubgraphs(nx_graph, random_data[:10], pictures_dir+"random")
-    # 整理成数据集
-    all_datas = []
-    all_datas.extend([item, 0] for item in bench_data)
-    all_datas.extend([item, 1] for item in middle_data)
-    all_datas.extend([item, 2] for item in random_data)
-    # 多进程处理
-    multi_res = []
-    pool = mtp.Pool(processes=10)
-    for index, (item, label) in enumerate(all_datas):
-        multi_res.append(pool.apply_async(
-            get_singlegraph, args=(nx_graph, item, direct, label, index)))
-    pool.close()
-    pool.join()
-    datasets = [item.get() for item in multi_res]
-
-    with open(train_datasets_path, 'wb') as f:
-        pickle.dump(datasets, f)
-    return datasets, datasets_label
+    if typ == "classification":
+        all_datas = data_fusion_to_classification(
+            bench_data, middle_data, random_data)
+    else:
+        all_datas = data_fusion_to_regression(
+            bench_data, middle_data, random_data)
+    datasets = construct_and_storation_subgraphs(
+        train_datasets_path, nx_graph, all_datas, direct)
+    return datasets, os.path.basename(train_datasets_path)
 
 
-def selectcomplex_datasets(recompute=False, direct=False, graphname="DIP", refername="coach", basedir=""):
+def selectcomplex_datasets(recompute=False, direct=False, graphname="DIP", benchname="CYC2008", refername="coach", basedir="", typ="classification"):
     train_datasets_path, refer_results_path, refer_results_expand_path, select_datasets_path, select_datasets_expand_path, pictures_dir, bench_path, edges_path, nodesfeat_path, edgesfeat_path = path_process(
-        graphname, "", refername, basedir)
+        graphname, benchname, refername, basedir, typ, direct)
 
     # refer方法的图跑出来
-    if not (os.path.exists(refer_results_path)) or recompute:
-        runinpy3.main(method_name=refername, edges_path=edges_path,
-                      result_path=refer_results_path, expand=False, basedir=basedir+"refer")
-    refer_data = read_complexes(refer_results_path)
-    # refer方法的图跑出来
-    if not (os.path.exists(refer_results_expand_path)) or recompute:
-        runinpy3.main(method_name=refername, edges_path=edges_path,
-                      result_path=refer_results_expand_path, expand=True, basedir=basedir+"refer")
-    expand_refer_data = read_complexes(refer_results_expand_path)
+    refer_data = refermethods.main(method_name=refername, edges_path=edges_path,
+                                   result_path=refer_results_path, expand=False, basedir=basedir+"refer", recompute=recompute)
+    expand_refer_data = refermethods.main(method_name=refername, edges_path=edges_path,
+                                          result_path=refer_results_expand_path, expand=True, basedir=basedir+"refer", recompute=recompute)
 
     if not recompute and os.path.exists(select_datasets_expand_path):
-        with open(select_datasets_expand_path, 'rb')as f:
-            result = pickle.load(f)
+        result = reload_subgraphs(select_datasets_expand_path)
         return refer_data, expand_refer_data, result
+
     nx_graph = get_global_nxgraph(nodesfeat_path, edgesfeat_path, direct)
-    multi_res = []
-    pool = mtp.Pool(processes=10)
-    for index, item in enumerate(expand_refer_data):
-        multi_res.append(pool.apply_async(
-            get_singlegraph, args=(nx_graph, item, direct, -1, index)))
-    pool.close()
-    pool.join()
-    datasets = [item.get() for item in multi_res]
-    with open(select_datasets_expand_path, 'wb') as f:
-        pickle.dump(datasets, f)
+    bench_data = read_complexes(bench_path)
+    nx_graph_added_label = [
+        0 if score >= 0.25 else 1 for score in complex_score(expand_refer_data, bench_data)]
+    expand_refer_data_with_label = [[expand_refer_data[i], nx_graph_added_label[i]]
+                                    for i in range(len(expand_refer_data))]
+    datasets = construct_and_storation_subgraphs(
+        select_datasets_expand_path, nx_graph, expand_refer_data_with_label, direct)
     return refer_data, expand_refer_data, datasets
 
 

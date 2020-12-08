@@ -108,10 +108,27 @@ def get_method(name):
     return None
 
 
-def main(method_name, edges_path,  result_path, expand, basedir=""):
-    methodor = get_method(method_name)
-    meth = methodor(edges_path, result_path, expand, basedir)
-    meth.run()
+def read_complexes(path):
+    res = list()
+    with open(path, 'r')as f:
+        for line in f:
+            line_splited = None
+            if '\t' in line:
+                line_splited = line.strip().split('\t')
+            elif ' ' in line:
+                line_splited = line.strip().split(' ')
+            else:
+                pass
+            res.append(set(line_splited))
+    return res
+
+
+def main(method_name, edges_path,  result_path, expand, basedir="", recompute=False):
+    if not (os.path.exists(result_path)) or recompute:
+        methodor = get_method(method_name)
+        meth = methodor(edges_path, result_path, expand, basedir)
+        meth.run()
+    return read_complexes(result_path)
 
 
 if __name__ == "__main__":
