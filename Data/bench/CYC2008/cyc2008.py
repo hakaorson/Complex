@@ -13,7 +13,7 @@ def readmap(path):
 
 
 # 读取cyc2008数据集
-def readcomplex(path):
+def readCYC2008(path):
     res = []
     with open(path) as f:
         next(f)
@@ -47,7 +47,7 @@ def save(datas, path):
 
 
 if __name__ == "__main__":
-    complexes_genename = readcomplex('origin_data/CYC2008')
+    complexes_genename = readCYC2008('origin_data/CYC2008')
     ids = []
     for comp in complexes_genename:
         ids.extend(comp)

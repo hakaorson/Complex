@@ -13,7 +13,7 @@ from Check import metrix
 if __name__ == "__main__":
     random.seed(666)
     normal_datas, expand_datas, datas = data.selectcomplex_datasets(
-        basedir="Data/", recompute=True, refername="coach", typ="classification")
+        basedir="Data/", recompute=False, refername="coach", typ="classification")
     datas = [[item.graph, item.feat, item.label] for item in datas]
     model = models.GCN_with_Topologi(
         nodefeatsize=486,
@@ -21,11 +21,11 @@ if __name__ == "__main__":
         graphfeatsize=10,
         hidden_size=128,
         gcn_layers=2,
-        output_size=3,
+        output_size=5,
         activate=None
     )
     model.load_state_dict(torch.load(
-        r"Model/saved_models/gcnwithtopo_CYC2008_DIP_coach_classification_U_12081355/8.pt"))
+        r"Model/saved_models/gcnwithtopo_CYC2008_DIP_coach_classification_U_12081554/32.pt"))
     res = flow.select_classification(model, datas, thred=0.1)
     expand_datas_selected = []
     for index, val in enumerate(res):

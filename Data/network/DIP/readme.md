@@ -15,3 +15,5 @@ DIP官网数据：https://dip.doe-mbi.ucla.edu/dip/Main.cgi
 最终需要从dip_22977中去除一部分无法匹配的数据560条
 最终剩余21992条数据，存放于dip中，最终独立的蛋白质id数目为4933个
 
+cyc2008中有153个蛋白质不在dip中
+

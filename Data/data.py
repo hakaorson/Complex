@@ -37,6 +37,7 @@ def dataprocess(matrix):
 
 def subgraphs(complexes, graph):
     res = []
+    subgraph_notcomplete_num = 0
     all_complex_nodes = set()
     all_graph_nodes = set(graph.nodes)
     for comp in complexes:
@@ -44,10 +45,15 @@ def subgraphs(complexes, graph):
         subgraph = nx.subgraph(graph, comp)
         subgraph_bi = nx.Graph(subgraph)  # 转换为有向图求解
         sub_components = nx.connected_components(subgraph_bi)
+        matched_nodes = set()
         for sub_component in sub_components:
             res.append(sub_component)
-    print("has {} protein not in graph".format(
-        len(all_complex_nodes-all_graph_nodes)))
+            matched_nodes = matched_nodes | sub_component.nodes
+        if len(matched_nodes) < len(comp):
+            subgraph_notcomplete_num += 1
+    print("has {} protein not in graph, nodes:{}".format(
+        len(all_complex_nodes-all_graph_nodes), (all_complex_nodes-all_graph_nodes)))
+    print("has {} graph is not complete".format(subgraph_notcomplete_num))
     return res
 
 
@@ -276,24 +282,30 @@ def path_process(graphname, benchname, refername, basedir, typ, direct):
 def data_fusion_to_classification(bench_data, middle_data, random_data):
     # 接下来去重
     middle_scores = complex_score(middle_data, bench_data)
-    middle_data_selected = []
+    middle_data_neg, middle_data_pos = [], []
     for index, comp in enumerate(middle_data):
         if middle_scores[index] <= 0.25:
-            middle_data_selected.append(comp)
+            middle_data_neg.append(comp)
+        else:
+            middle_data_pos.append(comp)
     random_scores = complex_score(random_data, bench_data+middle_data)
-    random_data_selected = []
+    random_data_neg, random_data_pos = [], []
     for index, comp in enumerate(random_data):
         if random_scores[index] <= 0.25:
-            random_data_selected.append(comp)
+            random_data_neg.append(comp)
+        else:
+            random_data_pos.append(comp)
     # 存储图片
     # savesubgraphs(nx_graph, bench_data[:10], pictures_dir+"bench")
     # savesubgraphs(nx_graph, middle_data[:10], pictures_dir+"middle")
     # savesubgraphs(nx_graph, random_data[:10], pictures_dir+"random")
     # 整理成数据集
     all_datas = []
-    all_datas.extend([[item, 0] for item in bench_data])
-    all_datas.extend([[item, 1] for item in middle_data_selected])
-    all_datas.extend([[item, 2] for item in random_data_selected])
+    all_datas.extend([[item, 0]for item in bench_data])  # 这些样本需要汇聚到一起
+    all_datas.extend([[item, 1] for item in middle_data_neg])
+    all_datas.extend([[item, 2] for item in random_data_neg])
+    all_datas.extend([[item, 3] for item in middle_data_pos])
+    all_datas.extend([[item, 4] for item in random_data_pos])
     return all_datas
 
 

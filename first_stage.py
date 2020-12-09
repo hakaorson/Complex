@@ -10,7 +10,7 @@ import pickle
 def regression():
     random.seed(666)
     tarindatas, datasets_name = data.trainmodel_datasets(
-        basedir="Data/", recompute=False, typ="regression", refername="clique_percolation")
+        basedir="Data/", recompute=True, typ="regression", refername="clique_percolation")
     datas = [[item.graph, item.feat, item.label] for item in tarindatas]
     random.shuffle(datas)
     size = len(datas)
@@ -37,7 +37,7 @@ def regression():
 def classification_process():
     random.seed(666)
     tarindatas, datasets_name = data.trainmodel_datasets(
-        basedir="Data/", recompute=False, typ="classification", refername="coach")
+        basedir="Data/", recompute=True, typ="classification", refername="coach", benchname="CYC2008GENE", graphname="Biogrid")
     datas = [[item.graph, item.feat, item.label] for item in tarindatas]
     random.shuffle(datas)
     size = len(datas)
@@ -49,7 +49,7 @@ def classification_process():
         graphfeatsize=10,
         hidden_size=128,
         gcn_layers=2,
-        output_size=3,
+        output_size=5,
         activate=None
     )
     model_path = "Model/saved_models/{}_{}_{}".format(model.name, datasets_name,

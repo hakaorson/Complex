@@ -78,7 +78,10 @@ def read_uniprotkb(path):
     with open(path, 'r')as f:
         heads = next(f)
         headslist = heads.strip().split('\t')
-        enterIndex = headslist.index('Entry')
+        enterIndex = -1
+        for index, name in enumerate(headslist):
+            if name[:8] == "yourlist":
+                enterIndex = index
         seqIndex = headslist.index('Sequence')
         subcellIndex = headslist.index('Subcellular location [CC]')
         goIndex = headslist.index('Gene ontology IDs')
@@ -443,7 +446,7 @@ def compute_node_feats(name, nodes, edges, uniprot_data):
     for node in nodes:
         tempEmb = {}
         tempEmb['id'] = [node]
-        tempEmb['blast'] = compute_node_feat_blast(blast_map, node)
+        # tempEmb['blast'] = compute_node_feat_blast(blast_map, node)#不再计算blast特征
         tempEmb['deepwalk'] = deepwalkres[node]
         tempEmb['len'] = [len(uniprot_data[node]['seq']) if node in uniprot_data.keys(
         ) else int(protein_default_size)]
@@ -520,6 +523,6 @@ def main(name):
 
 
 if __name__ == "__main__":
-    # main("DIP")
-    processFeat("DIP"+'/nodes_feat', 'node')
-    processFeat("DIP"+'/edges_feat', 'edge')
+    main("Biogrid")
+    # processFeat("DIP"+'/nodes_feat', 'node')
+    # processFeat("DIP"+'/edges_feat', 'edge')

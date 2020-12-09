@@ -83,16 +83,6 @@ def read_dip(path, dipmap, refmap):
     return resPairs, resIds
 
 
-def read_id(path):
-    nodes = set()
-    with open(path) as f:
-        for line in f:
-            linelist = line.strip().split('\t')
-            for singleid in linelist:
-                nodes.add(singleid)
-    return nodes
-
-
 def readmap(path):
     res = {}
     with open(path) as f:
