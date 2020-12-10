@@ -36,9 +36,9 @@ def train_classification(model, train_datas, val_datas, batchsize, path, epoch):
         train_data_loader = torch.utils.data.DataLoader(
             train_datas, batch_size=batchsize, shuffle=True, collate_fn=collate_long)
         for train_graphs, train_feats, train_labels in train_data_loader:
+            optimizer.zero_grad()
             train_prediction = model(train_graphs, train_feats)
             train_loss = loss(train_prediction, train_labels)
-            optimizer.zero_grad()
             train_loss.backward()
             optimizer.step()
             train_epoch_loss.append(train_loss.detach().item())  # 每一个批次的损失
@@ -95,14 +95,14 @@ def train_regression(model, train_datas, val_datas, batchsize, path, epoch):
             torch.save(model.state_dict(), path+'/{}.pt'.format(i))
 
 
-def select_classification(model, datas, thred=0.3):
+def select_classification(model, datas):
     select_data_loader = torch.utils.data.DataLoader(
         datas, batch_size=128, shuffle=True, collate_fn=collate_long)
     res = []
     for select_graphs, select_feats, _ in select_data_loader:
         predictions = torch.nn.Softmax()(model(select_graphs, select_feats))
         for item in predictions:
-            if item[0] == max(item) or item[3] == max(item) or item[4] == max(item):
+            if item[0] == max(item) or item[1] == max(item):
                 res.append(True)
             # if item[0] >= thred:
             #     res.append(True)

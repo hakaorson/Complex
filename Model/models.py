@@ -78,16 +78,18 @@ class GCN_readout(torchnn.Module):
     def __init__(self, hidden_size):
         super().__init__()
         self.weight_node = torchnn.Linear(
-            hidden_size*2, hidden_size, bias=True)
+            hidden_size*4, hidden_size, bias=True)
         self.activate = torchnn.LeakyReLU()
 
     def forward(self, dgl_data):
-        dgl_node = torch.cat([
+        dgl_feat = torch.cat([
             dgl.mean_nodes(dgl_data, 'h'),
-            dgl.max_nodes(dgl_data, 'h')
+            dgl.max_nodes(dgl_data, 'h'),
+            dgl.mean_edges(dgl_data, 'h'),
+            dgl.max_edges(dgl_data, 'h'),
         ], -1)
         # TODO 加上边的readout
-        dgl_predict = self.activate(self.weight_node(dgl_node))
+        dgl_predict = self.activate(self.weight_node(dgl_feat))
         return dgl_predict
 
 
@@ -134,6 +136,29 @@ class GCN_with_Topologi(torchnn.Module):
         base_feat = self.base_feat_init(base_data)
         predict = self.linear(torch.cat([dgl_data_feat, base_feat], -1))
         return self.final_activate(predict) if self.final_activate else predict
+
+
+class DeepwalkFeatGetor(torchnn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, dgl_data):
+        mean_deepwalk_feat = dgl.mean_nodes(dgl_data, 'feat')
+        return mean_deepwalk_feat[:, :64]
+
+
+class OnlyDeepwalk(torchnn.Module):
+    def __init__(self, nodefeatsize, edgefeatsize, graphfeatsize, hidden_size, gcn_layers, output_size, activate):
+        super().__init__()
+        self.name = "onlydeepwalk"
+        self.deepwalkfeatget = DeepwalkFeatGetor()
+        self.linear = Linear_process(64, hidden_size, output_size, layer_num=1)
+        self.final_activate = activate
+
+    def forward(self, dgl_data, base_data):
+        deepwalk_feat = self.deepwalkfeatget(dgl_data)
+        deepwalk_predict = self.linear(deepwalk_feat)
+        return self.final_activate(deepwalk_predict) if self.final_activate else deepwalk_predict
 
 
 if __name__ == '__main__':

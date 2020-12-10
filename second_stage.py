@@ -13,20 +13,20 @@ from Check import metrix
 if __name__ == "__main__":
     random.seed(666)
     normal_datas, expand_datas, datas = data.selectcomplex_datasets(
-        basedir="Data/", recompute=False, refername="coach", typ="classification")
+        basedir="Data/", recompute=False, refername="clique_percolation", typ="classification")
     datas = [[item.graph, item.feat, item.label] for item in datas]
-    model = models.GCN_with_Topologi(
+    model = models.OnlyDeepwalk(
         nodefeatsize=66,
         edgefeatsize=19,
         graphfeatsize=10,
         hidden_size=128,
         gcn_layers=2,
-        output_size=5,
+        output_size=4,
         activate=None
     )
     model.load_state_dict(torch.load(
-        r"Model/saved_models/gcnwithtopo_CYC2008_DIP_coach_classification_U_1210193/12.pt"))
-    res = flow.select_classification(model, datas, thred=0.3)
+        r"Model/saved_models/onlydeepwalk_CYC2008_Biogrid_coach_classification_U_12102916/20.pt"))
+    res = flow.select_classification(model, datas)
     expand_datas_selected = []
     for index, val in enumerate(res):
         if val:

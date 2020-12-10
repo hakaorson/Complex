@@ -526,6 +526,6 @@ def main(name):
 
 
 if __name__ == "__main__":
-    main("DIP")
+    main("Biogrid")
     # processFeat("DIP"+'/nodes_feat', 'node')
     # processFeat("DIP"+'/edges_feat', 'edge')

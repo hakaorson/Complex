@@ -45,15 +45,18 @@ def subgraphs(complexes, graph):
         subgraph = nx.subgraph(graph, comp)
         subgraph_bi = nx.Graph(subgraph)  # 转换为有向图求解
         sub_components = nx.connected_components(subgraph_bi)
-        matched_nodes = set()
-        for sub_component in sub_components:
-            res.append(sub_component)
-            matched_nodes = matched_nodes | sub_component
-        if len(matched_nodes) < len(comp):
-            subgraph_notcomplete_num += 1
-    print("has {} protein not in graph, nodes:{}".format(
-        len(all_complex_nodes-all_graph_nodes), (all_complex_nodes-all_graph_nodes)))
-    print("has {} graph is not complete".format(subgraph_notcomplete_num))
+        sub_components = [item for item in sub_components]
+        if len(sub_components) == 1 and len(sub_components[0]) == len(comp):
+            res.append(sub_components[0])
+    #     matched_nodes = set()
+    #     for sub_component in sub_components:
+    #         res.append(sub_component)
+    #         matched_nodes = matched_nodes | sub_component
+    #     if len(matched_nodes) < len(comp):
+    #         subgraph_notcomplete_num += 1
+    # print("has {} protein not in graph, nodes:{}".format(
+    #     len(all_complex_nodes-all_graph_nodes), (all_complex_nodes-all_graph_nodes)))
+    # print("has {} graph is not complete".format(subgraph_notcomplete_num))
     return res
 
 
@@ -302,10 +305,9 @@ def data_fusion_to_classification(bench_data, middle_data, random_data):
     # 整理成数据集
     all_datas = []
     all_datas.extend([[item, 0]for item in bench_data])  # 这些样本需要汇聚到一起
-    all_datas.extend([[item, 1] for item in middle_data_neg])
-    all_datas.extend([[item, 2] for item in random_data_neg])
-    all_datas.extend([[item, 3] for item in middle_data_pos])
-    all_datas.extend([[item, 4] for item in random_data_pos])
+    all_datas.extend([[item, 1] for item in middle_data_pos])
+    all_datas.extend([[item, 2] for item in middle_data_neg])
+    all_datas.extend([[item, 3] for item in random_data])
     return all_datas
 
 
@@ -356,16 +358,17 @@ def trainmodel_datasets(recompute=False, direct=False, graphname="DIP", benchnam
     nx_graph = get_global_nxgraph(nodesfeat_path, edgesfeat_path, direct)
     # dgl_graph = single_data(nx_graph, direct).graph
     bench_data = read_complexes(bench_path)
-    middle_data = read_complexes(refer_results_path)
-    random_data = get_random_graphs(
-        nx_graph, [len(item) for item in bench_data + middle_data], (len(bench_data)+len(middle_data)), multi=False)  # TODO 设定随机的数目
-
     # 接下来需要提取真正的graph，找出所有的subgraph，因为有些点是不存在的
     bench_data = subgraphs(bench_data, nx_graph)
+    middle_data = read_complexes(refer_results_path)[
+        :len(bench_data)]*3  # 保持数据平衡*
+    random_data = get_random_graphs(
+        nx_graph, [len(item) for item in bench_data + middle_data], len(bench_data)*3, multi=False)  # TODO 设定随机的数目
+
     # 接下来归并处理
-    bench_data = merged_data(bench_data)  # 621->555
-    middle_data = merged_data(middle_data)  # 888->416
-    random_data = merged_data(random_data)  # 129->99
+    # bench_data = merged_data(bench_data)  # 621->555
+    # middle_data = merged_data(middle_data)  # 888->416
+    # random_data = merged_data(random_data)  # 129->99
     if typ == "classification":
         all_datas = data_fusion_to_classification(
             bench_data, middle_data, random_data)
