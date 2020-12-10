@@ -78,10 +78,13 @@ def read_uniprotkb(path):
     with open(path, 'r')as f:
         heads = next(f)
         headslist = heads.strip().split('\t')
+        # 使用 yourlist作为id，如果实在没有，可以使用entry作为id
         enterIndex = -1
         for index, name in enumerate(headslist):
             if name[:8] == "yourlist":
                 enterIndex = index
+        enterIndex = enterIndex if enterIndex != -1 \
+            else headslist.index('Entry')
         seqIndex = headslist.index('Sequence')
         subcellIndex = headslist.index('Subcellular location [CC]')
         goIndex = headslist.index('Gene ontology IDs')
@@ -438,7 +441,7 @@ def deepwalk(name, nodes, edges, recompute=True):
 
 def compute_node_feats(name, nodes, edges, uniprot_data):
     blast_map = read_mapping("embedding_support/blast/POSSUM_DATA")
-    deepwalkres = deepwalk(name, nodes, edges, False)
+    deepwalkres = deepwalk(name, nodes, edges, True)
     protein_default_size = sum([len(uniprot_data[key]['seq'])
                                 for key in uniprot_data.keys()])/len(uniprot_data.keys())
     # randomGCN = randomgcn(nodes, edges)
@@ -523,6 +526,6 @@ def main(name):
 
 
 if __name__ == "__main__":
-    main("Biogrid")
+    main("DIP")
     # processFeat("DIP"+'/nodes_feat', 'node')
     # processFeat("DIP"+'/edges_feat', 'edge')

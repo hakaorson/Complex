@@ -15,6 +15,7 @@ class DGLInit(torchnn.Module):
 
     def forward(self, dgl_data: dgl.DGLGraph):
         dgl_data.ndata['h'] = self.activate(self.init_weight_node(
+
             dgl_data.ndata['feat']))
 
         dgl_data.edata['h'] = self.activate(self.init_weight_edge(
@@ -85,6 +86,7 @@ class GCN_readout(torchnn.Module):
             dgl.mean_nodes(dgl_data, 'h'),
             dgl.max_nodes(dgl_data, 'h')
         ], -1)
+        # TODO 加上边的readout
         dgl_predict = self.activate(self.weight_node(dgl_node))
         return dgl_predict
 

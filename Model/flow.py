@@ -4,6 +4,7 @@ import torch
 import pickle
 import dgl
 import random
+import logging
 import os
 
 
@@ -24,6 +25,9 @@ def collate_float(samples):
 
 
 def train_classification(model, train_datas, val_datas, batchsize, path, epoch):
+    os.makedirs(path, exist_ok=True)
+    logging.basicConfig(filename=path+"/log", level=logging.DEBUG)
+
     loss = torch.nn.CrossEntropyLoss()  # 数据已经经过了sigmoid，所以只需要log likelihood loss
     optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
     model.train()
@@ -50,13 +54,12 @@ def train_classification(model, train_datas, val_datas, batchsize, path, epoch):
             torch.nn.Softmax()(val_predictions), -1).detach()
         val_metrix = precision_score(
             val_labels, val_maxindexs, average="macro")
-        print('epoch {} train_loss:'.format(i), sum(train_epoch_loss)/len(train_epoch_loss),
-              'val_loss:', val_epoch_loss,
-              'val metrix:', val_metrix)
+        logging.info('epoch {} train_loss:{}'.format(i, sum(train_epoch_loss)/len(train_epoch_loss)) +
+                     'val_loss:{}'.format(val_epoch_loss) +
+                     'val metrix:{}'.format(val_metrix))
 
         # 存储模型
         if i != 0 and i % 2 == 0:
-            os.makedirs(path, exist_ok=True)
             torch.save(model.state_dict(), path+'/{}.pt'.format(i))
 
 
@@ -75,7 +78,6 @@ def train_regression(model, train_datas, val_datas, batchsize, path, epoch):
             train_loss.backward()
             optimizer.step()
             train_epoch_loss.append(train_loss.detach().item())  # 每一个批次的损失
-            # print("batch_loss {}".format(train_epoch_loss[-1]))
 
         # validata
         val_graphs, val_feats, val_labels = collate_float(
@@ -102,6 +104,8 @@ def select_classification(model, datas, thred=0.3):
         for item in predictions:
             if item[0] == max(item) or item[3] == max(item) or item[4] == max(item):
                 res.append(True)
+            # if item[0] >= thred:
+            #     res.append(True)
             else:
                 res.append(False)
     return res

@@ -48,7 +48,7 @@ def subgraphs(complexes, graph):
         matched_nodes = set()
         for sub_component in sub_components:
             res.append(sub_component)
-            matched_nodes = matched_nodes | sub_component.nodes
+            matched_nodes = matched_nodes | sub_component
         if len(matched_nodes) < len(comp):
             subgraph_notcomplete_num += 1
     print("has {} protein not in graph, nodes:{}".format(
