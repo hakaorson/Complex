@@ -260,16 +260,16 @@ def get_global_nxgraph(node_path, edge_path, direct):
     return nx_graph
 
 
-def path_process(graphname, benchname, refername, basedir, typ, direct):
-    train_datasets_path = basedir + "datasets/train_datasets/{}_{}_{}_{}_{}".format(
-        benchname, graphname, refername, typ, "D" if direct else "U")
+def path_process(graphname, benchname, refername, basedir, direct):
+    train_datasets_path = basedir + "datasets/train_datasets/{}_{}_{}_{}".format(
+        benchname, graphname, refername, "D" if direct else "U")
 
     refer_results_path = basedir + "datasets/refer_results/{}_{}".format(
         graphname,  refername)
     refer_results_expand_path = refer_results_path+'_expand'
     select_datasets_path = basedir + \
-        "datasets/select_datasets/{}_{}_{}_{}".format(
-            graphname, refername, typ, "D" if direct else "U")
+        "datasets/select_datasets/{}_{}_{}".format(
+            graphname, refername, "D" if direct else "U")
     select_datasets_expand_path = select_datasets_path+'_expand'
 
     pictures_dir = basedir + "datasets/pictures/"
@@ -282,8 +282,7 @@ def path_process(graphname, benchname, refername, basedir, typ, direct):
     return train_datasets_path, refer_results_path, refer_results_expand_path, select_datasets_path, select_datasets_expand_path, pictures_dir, bench_path, edges_path, nodesfeat_path, edgesfeat_path
 
 
-def data_fusion_to_classification(bench_data, middle_data, random_data):
-    # 接下来去重
+def data_fusion(bench_data, middle_data, random_data):
     middle_scores = complex_score(middle_data, bench_data)
     middle_data_neg, middle_data_pos = [], []
     for index, comp in enumerate(middle_data):
@@ -291,30 +290,19 @@ def data_fusion_to_classification(bench_data, middle_data, random_data):
             middle_data_neg.append(comp)
         else:
             middle_data_pos.append(comp)
-    random_scores = complex_score(random_data, bench_data+middle_data)
+    random_scores = complex_score(random_data, bench_data)
     random_data_neg, random_data_pos = [], []
     for index, comp in enumerate(random_data):
         if random_scores[index] <= 0.25:
             random_data_neg.append(comp)
         else:
             random_data_pos.append(comp)
-    # 存储图片
-    # savesubgraphs(nx_graph, bench_data[:10], pictures_dir+"bench")
-    # savesubgraphs(nx_graph, middle_data[:10], pictures_dir+"middle")
-    # savesubgraphs(nx_graph, random_data[:10], pictures_dir+"random")
-    # 整理成数据集
-    all_datas = []
-    all_datas.extend([[item, 0]for item in bench_data])  # 这些样本需要汇聚到一起
-    all_datas.extend([[item, 1] for item in middle_data_pos])
-    all_datas.extend([[item, 2] for item in middle_data_neg])
-    all_datas.extend([[item, 3] for item in random_data])
-    return all_datas
-
-
-def data_fusion_to_regression(bench_data, middle_data, random_data):
-    all_datas = random_data+middle_data+bench_data
-    all_scores = complex_score(all_datas, bench_data)
-    return [[all_datas[index], all_scores[index]] for index in range(len(all_datas))]
+    res_benchdata = [[item, 0, 1]for item in bench_data]  # 这些样本需要汇聚到一起
+    res_middledata = [[item, 1, max(middle_scores[index])]
+                      for index, item in enumerate(middle_data)]
+    res_randomdata = [[item, 2, 0]
+                      for item in random_data_neg]  # 随即图要去除过于像正样本的部分
+    return res_benchdata, res_middledata, res_randomdata
 
 
 def construct_and_storation_subgraphs(path, graph, subs, direct):
@@ -345,9 +333,9 @@ def reload_subgraphs(path):
     return result
 
 
-def trainmodel_datasets(recompute=False, direct=False, graphname="DIP", benchname="CYC2008", refername="coach", basedir="", typ="classification"):
+def trainmodel_datasets(recompute=False, direct=False, graphname="DIP", benchname="CYC2008", refername="coach", basedir=""):
     train_datasets_path, refer_results_path, refer_results_expand_path, select_datasets_path, select_datasets_expand_path, pictures_dir, bench_path, edges_path, nodesfeat_path, edgesfeat_path = path_process(
-        graphname, benchname, refername, basedir, typ, direct)
+        graphname, benchname, refername, basedir, direct)
     if not recompute and os.path.exists(train_datasets_path):
         datasets = reload_subgraphs(train_datasets_path)
         return datasets, os.path.basename(train_datasets_path)
@@ -360,24 +348,20 @@ def trainmodel_datasets(recompute=False, direct=False, graphname="DIP", benchnam
     bench_data = read_complexes(bench_path)
     # 接下来需要提取真正的graph，找出所有的subgraph，因为有些点是不存在的
     bench_data = subgraphs(bench_data, nx_graph)
-    middle_data = read_complexes(refer_results_path)[
-        :len(bench_data)]*3  # 保持数据平衡*
+    middle_data = read_complexes(refer_results_path)[:len(bench_data)]
     random_data = get_random_graphs(
-        nx_graph, [len(item) for item in bench_data + middle_data], len(bench_data)*3, multi=False)  # TODO 设定随机的数目
+        nx_graph, [len(item) for item in bench_data + middle_data], len(bench_data)+len(middle_data), multi=False)
 
     # 接下来归并处理
-    # bench_data = merged_data(bench_data)  # 621->555
-    # middle_data = merged_data(middle_data)  # 888->416
-    # random_data = merged_data(random_data)  # 129->99
-    if typ == "classification":
-        all_datas = data_fusion_to_classification(
-            bench_data, middle_data, random_data)
-    else:
-        all_datas = data_fusion_to_regression(
-            bench_data, middle_data, random_data)
-    datasets = construct_and_storation_subgraphs(
-        train_datasets_path, nx_graph, all_datas, direct)
-    return datasets, os.path.basename(train_datasets_path)
+    bench_data, middle_data, random_data = data_fusion(
+        bench_data, middle_data, random_data)
+    bench_datasets = construct_and_storation_subgraphs(
+        train_datasets_path+"/bench_items", nx_graph, bench_data, direct)
+    middle_datasets = construct_and_storation_subgraphs(
+        train_datasets_path+"/middle_items", nx_graph, middle_data, direct)
+    random_datasets = construct_and_storation_subgraphs(
+        train_datasets_path+"/random_items", nx_graph, random_data, direct)
+    return bench_datasets, middle_datasets, random_datasets, os.path.basename(train_datasets_path)
 
 
 def selectcomplex_datasets(recompute=False, direct=False, graphname="DIP", benchname="CYC2008", refername="coach", basedir="", typ="classification"):
