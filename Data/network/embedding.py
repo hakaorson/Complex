@@ -405,30 +405,27 @@ def compute_node_feat_blast(mapping, node):
         return 420*[0.0]
 
 
-def deepwalk(name, nodes, edges, recompute=True):
+def deepwalk(name, nodes, edges):
     node_map = {}
     for index, node in enumerate(nodes):
         node_map[node] = index
     edges_path = "embedding_support/deepwalk/{}_edges".format(name)
     embed_path = "embedding_support/deepwalk/{}_embed".format(name)
-    if recompute is False and os.path.exists(embed_path):
-        pass
-    else:
-        if os.path.exists(embed_path):
-            os.remove(embed_path)
-        with open(edges_path, 'w') as f:
-            for v0, v1 in edges:
-                string = "{} {}\n".format(node_map[v0], node_map[v1])
-                f.write(string)
-        cmd = ["deepwalk", "--input", os.path.abspath(
-            edges_path), "--output", os.path.abspath(embed_path), "--format", "edgelist"]
-        subprocess.Popen(cmd)  # TODO 暂时不需要执行
-        while True:
-            if not os.path.exists(embed_path):
-                time.sleep(1)
-            else:
-                time.sleep(3)
-                break
+    if os.path.exists(embed_path):
+        os.remove(embed_path)
+    with open(edges_path, 'w') as f:
+        for v0, v1 in edges:
+            string = "{} {}\n".format(node_map[v0], node_map[v1])
+            f.write(string)
+    cmd = ["deepwalk", "--input", os.path.abspath(
+        edges_path), "--output", os.path.abspath(embed_path), "--format", "edgelist"]
+    subprocess.Popen(cmd)  # TODO 暂时不需要执行
+    while True:
+        if not os.path.exists(embed_path):
+            time.sleep(1)
+        else:
+            time.sleep(3)
+            break
     with open(embed_path, 'r')as f:
         next(f)
         res = {}
@@ -441,7 +438,7 @@ def deepwalk(name, nodes, edges, recompute=True):
 
 def compute_node_feats(name, nodes, edges, uniprot_data):
     blast_map = read_mapping("embedding_support/blast/POSSUM_DATA")
-    deepwalkres = deepwalk(name, nodes, edges, True)
+    deepwalkres = deepwalk(name, nodes, edges)
     protein_default_size = sum([len(uniprot_data[key]['seq'])
                                 for key in uniprot_data.keys()])/len(uniprot_data.keys())
     # randomGCN = randomgcn(nodes, edges)

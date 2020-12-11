@@ -11,7 +11,7 @@ class DGLInit(torchnn.Module):
             innode_size, hidden_size, bias=True)
         self.init_weight_edge = torchnn.Linear(
             inedge_size, hidden_size, bias=True)
-        self.activate = torchnn.LeakyReLU()
+        self.activate = torchnn.Tanh()
 
     def forward(self, dgl_data: dgl.DGLGraph):
         dgl_data.ndata['h'] = self.activate(self.init_weight_node(
@@ -105,7 +105,7 @@ class Linear_process(torchnn.Module):
                 hidden_size, hidden_size, bias=True))
         self.layers.append(torchnn.Linear(
             hidden_size, output_size, bias=True))
-        self.activate = torchnn.LeakyReLU()
+        self.activate = torchnn.Sigmoid()
 
     def forward(self, data):
         for singlelayer in self.layers:
@@ -126,6 +126,7 @@ class GCN_with_Topologi(torchnn.Module):
         self.gcn_predict = GCN_readout(hidden_size)
         self.linear = Linear_process(
             hidden_size*2, hidden_size, output_size, layer_num=1)
+        self.predict_score = torch.nn.Linear(hidden_size*2, 1)
         self.final_activate = activate
 
     def forward(self, dgl_data, base_data):
@@ -134,8 +135,12 @@ class GCN_with_Topologi(torchnn.Module):
         dgl_data_feat = self.gcn_predict(dgl_data_gcn)
 
         base_feat = self.base_feat_init(base_data)
-        predict = self.linear(torch.cat([dgl_data_feat, base_feat], -1))
-        return self.final_activate(predict) if self.final_activate else predict
+        class_predict = self.linear(torch.cat([dgl_data_feat, base_feat], -1))
+        class_predict = self.final_activate(
+            class_predict) if self.final_activate else class_predict
+        score_predict = torch.nn.Sigmoid()(self.predict_score(
+            torch.cat([dgl_data_feat, base_feat], -1)))
+        return class_predict, score_predict
 
 
 class DeepwalkFeatGetor(torchnn.Module):
