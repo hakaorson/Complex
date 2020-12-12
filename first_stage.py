@@ -8,6 +8,7 @@ import datetime
 import pickle
 import logging
 import argparse
+from functools import reduce
 
 
 def arg_parse():
@@ -19,52 +20,52 @@ def arg_parse():
     parser.add_argument('--refer', type=str, default="coach")
     parser.add_argument('--bench', type=str, default="CYC2008")
     parser.add_argument('--graph', type=str, default="Krogan")
-    parser.add_argument('--refer_rate', type=int, default=1)
-    parser.add_argument('--random_rate', type=int, default=1)
+    parser.add_argument('--rebalance', type=int, default=0)
     parser.add_argument('--split', type=float, default=0.8)
     parser.add_argument('--seed', type=int, default=666)
-    # return parser.parse_args()
-    return parser.parse_args("--refer coach --bench CYC2008 --graph DIP --recompute 1".split(' '))
+    return parser.parse_args()
+    # return parser.parse_args("--refer coach --bench CYC2008 --graph DIP --recompute 1".split(' '))
 
 
 '''
-python first_stage.py --refer coach --bench CYC2008 --graph Biogrid --recompute 0
+python3 first_stage.py --refer coach --bench CYC2008 --graph Biogrid --recompute 1
 '''
 
 
-def construct_datasets(bench_datasets, refer_datasets, random_datasets, refer_rate, random_rate):
+def split_datasets(datas, rate):
+    train, val = [], []
+    for data in datas:
+        cut = int(rate*len(data))
+        train.append(data[:cut])
+        val.append(data[cut:])
+    return train, val
+
+
+def rebalance_datasets(datas):
     res = []
-    res.extend(bench_datasets)
-    nums_multi, nums_left = (len(bench_datasets)*refer_rate)//len(
-        refer_datasets), (len(bench_datasets)*refer_rate) % len(refer_datasets)
-    res.extend(list(refer_datasets*nums_multi))
-    res.extend(random.choices(refer_datasets, k=nums_left))
-
-    nums_multi, nums_left = (len(bench_datasets)*random_rate)//len(
-        random_datasets), (len(bench_datasets)*random_rate) % len(random_datasets)
-    res.extend(list(random_datasets*nums_multi))
-    res.extend(random.choices(random_datasets, k=nums_left))
+    target = len(datas[0])
+    for data in datas:
+        res.append([])
+        nums_multi, nums_left = target//len(data), target % len(data)
+        res[-1].extend(list(data*nums_multi))
+        res[-1].extend(random.choices(data, k=nums_left))
     return res
 
 
 def classification_process(args):
-    bench_datasets, refer_datasets, random_datasets, datasets_name = data.trainmodel_datasets(
+    datasets_list_by_class, datasets_name = data.trainmodel_datasets(
         basedir="Data/", recompute=args.recompute, refername=args.refer, benchname=args.bench, graphname=args.graph)
-    bench_split = int(args.split*len(bench_datasets))
-    refer_split = int(args.split*len(refer_datasets))
-    random_split = int(args.split*len(random_datasets))
-    tarindatas = construct_datasets(
-        bench_datasets[:bench_split], refer_datasets[:refer_split], random_datasets[:random_split], args.refer_rate, args.random_rate)
-    traindatas = [[item.graph, item.feat, item.label, item.score]
-                  for item in tarindatas]
-    valsize = len(bench_datasets[bench_split:])
-    valdatas = [[item.graph, item.feat, item.label, item.score]
-                for item in bench_datasets[bench_split:]+refer_datasets[refer_split:refer_split+valsize]+random_datasets[random_split:random_split+valsize]]
-    random.shuffle(traindatas)
-    random.shuffle(valdatas)
+    train_datasets, val_datasets = split_datasets(
+        datasets_list_by_class, args.split)
+    if args.rebalance:
+        train_datasets = rebalance_datasets(train_datasets)
+    train_datasets = [[item.graph, item.feat, item.label, item.score]
+                      for item in reduce(lambda a, b: a+b, train_datasets)]
+    val_datasets = [[item.graph, item.feat, item.label, item.score]
+                    for item in reduce(lambda a, b: a+b, val_datasets)]
 
-    model = models.OnlyBaseFeature(
-        nodefeatsize=66,
+    model = models.GCN_with_Topologi(
+        nodefeatsize=82,
         edgefeatsize=19,
         graphfeatsize=10,
         hidden_size=128,
@@ -74,9 +75,9 @@ def classification_process(args):
     )
     model_path = "Model/saved_models/{}_{}_{}".format(model.name, datasets_name,
                                                       time.strftime('{}_{}_{}_{}'.format(time.localtime().tm_mon, time.localtime().tm_mday, ((time.localtime().tm_hour)) % 24, time.localtime().tm_min)))
-    default_epoch = 100
-    batchsize = 16
-    flow.train_classification(model, traindatas, valdatas,
+    default_epoch = 5000
+    batchsize = 32
+    flow.train_classification(model, train_datasets, val_datasets,
                               batchsize, model_path, default_epoch)
 
 

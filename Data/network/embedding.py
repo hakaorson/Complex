@@ -10,6 +10,7 @@ import random
 from goatools import obo_parser
 import pandas as pd
 import subprocess
+from embedding_support.gae import train as gaetrain
 
 
 def findSubcellWords(str_input):
@@ -439,6 +440,8 @@ def deepwalk(name, nodes, edges):
 def compute_node_feats(name, nodes, edges, uniprot_data):
     blast_map = read_mapping("embedding_support/blast/POSSUM_DATA")
     deepwalkres = deepwalk(name, nodes, edges)
+    # gaetrain.gae_test_no_feat()
+    gaeres = gaetrain.gae_embedding(edges)
     protein_default_size = sum([len(uniprot_data[key]['seq'])
                                 for key in uniprot_data.keys()])/len(uniprot_data.keys())
     # randomGCN = randomgcn(nodes, edges)
@@ -448,6 +451,7 @@ def compute_node_feats(name, nodes, edges, uniprot_data):
         tempEmb['id'] = [node]
         # tempEmb['blast'] = compute_node_feat_blast(blast_map, node)#不再计算blast特征
         tempEmb['deepwalk'] = deepwalkres[node]
+        tempEmb['gae'] = gaeres[node]
         tempEmb['len'] = [len(uniprot_data[node]['seq']) if node in uniprot_data.keys(
         ) else int(protein_default_size)]
         res.append(tempEmb)
@@ -524,5 +528,6 @@ def main(name):
 
 if __name__ == "__main__":
     main("Biogrid")
+    # main("DIP")
     # processFeat("DIP"+'/nodes_feat', 'node')
     # processFeat("DIP"+'/edges_feat', 'edge')

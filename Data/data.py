@@ -12,7 +12,9 @@ import numpy as np
 import pandas as pd
 import torch
 from matplotlib import pyplot as plt
+import tqdm
 from sklearn import preprocessing
+
 
 from Data.refer import refermethods
 
@@ -20,12 +22,15 @@ from Data.refer import refermethods
 def get_datas(data_path):
     ids, datas = [], []
     with open(data_path, 'r') as f:
-        next(f)
+        featsnames = [item.split('_')[0]
+                      for item in next(f).strip().split('\t')[1:]]
+        featsnames = {name: [featsnames.index(name), featsnames.index(
+            name)+featsnames.count(name)] for name in set(featsnames)}
         for item in f:
             item_splited = item.strip().split('\t')
             ids.append(item_splited[0])
             datas.append(list(map(float, item_splited[1:])))
-    return ids, datas
+    return ids, datas, featsnames
 
 
 # 数据预处理，一些归一化等等
@@ -165,7 +170,7 @@ def complex_score(complexes, targets):
     return [max(af_matrix[index]) for index, comp in enumerate(complexes)]
 
 
-def savesubgraphs(graph, nodelists, path):
+def savesubgraphspicture(graph, nodelists, path):
     for index, nodes in enumerate(nodelists):
         subgraph = nx.subgraph(graph, nodes)
         nx.draw(subgraph)
@@ -179,28 +184,33 @@ def get_singlegraph(biggraph, item, direct, index):
     return single_data(subgraph, direct, item['label'], item['score'])
 
 
+def construct_dgl_graph(graph):
+    res = dgl.DGLGraph()
+    nodes = {name: index for index, name in enumerate(graph.nodes)}
+
+    def feat_distrubute(data, names):
+        res = {}
+        for name in names.keys():
+            res[name] = torch.tensor(
+                data[names[name][0]:names[name][1]], dtype=torch.float32).reshape(1, -1)
+            res['feat'] = torch.tensor(
+                data, dtype=torch.float32).reshape(1, -1)
+        return res
+    for node in nodes.keys():
+        feat = feat_distrubute(graph.nodes[node]['w'], graph.nodes[node]['n'])
+        res.add_nodes(1, feat)
+    for v0, v1 in graph.edges:
+        feat = feat_distrubute(graph[v0][v1]['w'], graph[v0][v1]['n'])
+        res.add_edges(nodes[v0], nodes[v1], feat)
+    return res
+
+
 class single_data:
     def __init__(self, nxgraph, direct, label=None, score=None):
         self.label = label
         self.score = score
-        self.graph = self.construct_dgl_graph(nxgraph)
+        self.graph = construct_dgl_graph(nxgraph)
         self.feat = self.get_default_feature(nxgraph, direct)
-
-    def construct_dgl_graph(self, graph: nx.Graph):
-        res = dgl.DGLGraph()
-        nodes = list(graph.nodes)
-        for index, node in enumerate(nodes):
-            data = torch.tensor(
-                graph.nodes[node]['w'], dtype=torch.float32).reshape(1, -1)
-            deg = torch.tensor(graph.degree(
-                node), dtype=torch.float32).reshape(1, -1)
-            res.add_nodes(1, {'feat': data, 'degree': deg})
-            # res.add_edge(index, index)
-        for v0, v1 in graph.edges:
-            data = torch.tensor(
-                graph[v0][v1]['w'], dtype=torch.float32).reshape(1, -1)
-            res.add_edges(nodes.index(v0), nodes.index(v1), {'feat': data})
-        return res
 
     def get_default_feature(self, graph: nx.Graph, direct):
         result = []
@@ -233,19 +243,22 @@ class single_data:
 def get_global_nxgraph(node_path, edge_path, direct):
     print("reading graph")
     # 获取图数据
-    nodes, nodematrix = get_datas(node_path)
-    edges, edgematrix = get_datas(edge_path)
+    nodes, nodematrix, nodefeatnames = get_datas(node_path)
+    edges, edgematrix, edgefeatnames = get_datas(edge_path)
     edges = [list(item.split(' ')) for item in edges]
     nx_graph = nx.DiGraph()
     for index, item in enumerate(nodematrix):
-        nx_graph.add_node(nodes[index], w=item)
+        nx_graph.add_node(nodes[index], w=item, n=nodefeatnames)
     if direct:
         for index, item in enumerate(edgematrix):
-            nx_graph.add_edge(edges[index][0], edges[index][1], w=item)
+            nx_graph.add_edge(edges[index][0], edges[index]
+                              [1], w=item, n=edgefeatnames)
     else:
         for index, item in enumerate(edgematrix):  # 无向图可以这么处理，重复
-            nx_graph.add_edge(edges[index][0], edges[index][1], w=item)
-            nx_graph.add_edge(edges[index][1], edges[index][0], w=item)
+            nx_graph.add_edge(edges[index][0], edges[index]
+                              [1], w=item, n=edgefeatnames)
+            nx_graph.add_edge(edges[index][1], edges[index]
+                              [0], w=item, n=edgefeatnames)
     return nx_graph
 
 
@@ -271,32 +284,35 @@ def path_process(graphname, benchname, refername, basedir, direct):
     return train_datasets_path, refer_results_path, refer_results_expand_path, select_datasets_path, select_datasets_expand_path, pictures_dir, bench_path, edges_path, nodesfeat_path, edgesfeat_path
 
 
-def data_fusion(origin_bench_data, subgraphed_bench_data, refer_data, random_data):
+def add_labels_on_datas(origin_bench_data, subgraphed_bench_data, refer_data, random_data):
+    bench_data = [[comp, 1.0] for comp in subgraphed_bench_data]
+
     refer_scores = complex_score(refer_data, origin_bench_data)
     refer_data_neg, refer_data_pos = [], []
     for index, comp in enumerate(refer_data):
         if refer_scores[index] <= 0.25:
-            refer_data_neg.append([comp, refer_scores[index], 1])
+            refer_data_neg.append([comp, refer_scores[index]])
+        elif refer_scores[index] > 0.25:
+            refer_data_pos.append([comp, refer_scores[index]])
         else:
-            refer_data_pos.append([comp, refer_scores[index], 2])
-    refer_data = refer_data_pos+refer_data_neg
+            pass
+
     random.shuffle(refer_data)
     random_scores = complex_score(random_data, origin_bench_data)
     random_data_neg, random_data_pos = [], []
     for index, comp in enumerate(random_data):
         if random_scores[index] <= 0.25:
-            random_data_neg.append([comp, random_scores[index], 3])
+            random_data_neg.append([comp, random_scores[index]])
+        elif random_scores[index] > 0.25:
+            random_data_pos.append([comp, random_scores[index]])
         else:
-            random_data_pos.append([comp, random_scores[index], 4])
-    random_data = random_data_pos+random_data_neg
-    random.shuffle(random_data)
-    res_benchdata = [{'complexes': item, 'label': 0, 'score': 1}
-                     for item in subgraphed_bench_data]  # 这些样本需要汇聚到一起
-    res_referdata = [{'complexes': item[0], 'label': item[2], 'score': item[1]}
-                     for index, item in enumerate(refer_data)]
-    res_randomdata = [{'complexes': item[0], 'label': item[2], 'score': item[1]}
-                      for index, item in enumerate(random_data)]  # 随即图要去除过于像正样本的部分
-    return res_benchdata, res_referdata, res_randomdata
+            pass
+
+    all_datas = [bench_data, random_data_neg, refer_data_pos, refer_data_neg]
+
+    res = [[{'complexes': item[0], 'label': index, 'score': item[1]}
+            for item in one_class_data] for index, one_class_data in enumerate(all_datas)]
+    return res
 
 
 def construct_and_storation_subgraphs(path, graph, subs, direct):
@@ -331,7 +347,12 @@ def trainmodel_datasets(recompute=False, direct=False, graphname="DIP", benchnam
     train_datasets_path, refer_results_path, refer_results_expand_path, select_datasets_path, select_datasets_expand_path, pictures_dir, bench_path, edges_path, nodesfeat_path, edgesfeat_path = path_process(
         graphname, benchname, refername, basedir, direct)
     if not recompute and os.path.exists(train_datasets_path):
-        return reload_subgraphs(train_datasets_path+"/bench_items"), reload_subgraphs(train_datasets_path+"/refer_items"), reload_subgraphs(train_datasets_path+"/random_items"), os.path.basename(train_datasets_path)
+        reloaded_datas = []
+        for names in sorted(os.listdir(train_datasets_path)):
+            data = list(reload_subgraphs(
+                train_datasets_path+"/{}".format(name)) for name in sorted(names))
+            reloaded_datas.append(data[0])
+        return reloaded_datas, os.path.basename(train_datasets_path)
 
     # refer方法的图跑出来
     refermethods.main(method_name=refername, edges_path=edges_path,
@@ -346,15 +367,11 @@ def trainmodel_datasets(recompute=False, direct=False, graphname="DIP", benchnam
         nx_graph, [len(item) for item in origin_bench_data], max(1000, len(subgraphed_bench_data)+len(refer_data)), multi=False)
 
     # 接下来归并处理
-    bench_data, refer_data, random_data = data_fusion(origin_bench_data,
-                                                      subgraphed_bench_data, refer_data, random_data)
-    bench_datasets = construct_and_storation_subgraphs(
-        train_datasets_path+"/bench_items", nx_graph, bench_data, direct)
-    refer_datasets = construct_and_storation_subgraphs(
-        train_datasets_path+"/refer_items", nx_graph, refer_data, direct)
-    random_datasets = construct_and_storation_subgraphs(
-        train_datasets_path+"/random_items", nx_graph, random_data, direct)
-    return bench_datasets, refer_datasets, random_datasets, os.path.basename(train_datasets_path)
+    labeled_datas = add_labels_on_datas(
+        origin_bench_data, subgraphed_bench_data, refer_data, random_data)
+    construct_graph_datas = [construct_and_storation_subgraphs(
+        train_datasets_path+"/{}".format(index), nx_graph, single_class, direct) for index, single_class in enumerate(labeled_datas)]
+    return construct_graph_datas, os.path.basename(train_datasets_path)
 
 
 def selectcomplex_datasets(recompute=False, direct=False, graphname="DIP", benchname="CYC2008", refername="coach", basedir=""):
@@ -374,7 +391,7 @@ def selectcomplex_datasets(recompute=False, direct=False, graphname="DIP", bench
     nx_graph = get_global_nxgraph(nodesfeat_path, edgesfeat_path, direct)
     bench_data = read_complexes(bench_path)
     scores = complex_score(expand_refer_data, bench_data)
-    expand_refer_data_with_label = [{'complexes': item, 'label': 1, 'score': scores[index]}
+    expand_refer_data_with_label = [{'complexes': item, 'label': -1, 'score': scores[index]}
                                     for index, item in enumerate(expand_refer_data)]
     datasets = construct_and_storation_subgraphs(
         select_datasets_expand_path, nx_graph, expand_refer_data_with_label, direct)

@@ -9,7 +9,7 @@ import numpy as np
 import os
 from sklearn import svm
 from sklearn import metrics
-from sklearn.externals import joblib
+import joblib
 
 
 def collate_long(samples):
@@ -33,7 +33,7 @@ def collate_float(samples):
 def lossfunc(true_labels, predicted_labels, true_scores, predicted_scores):
     Crossloss = torch.nn.CrossEntropyLoss()
     Mseloss = torch.nn.MSELoss()
-    mask = torch.gt(true_labels, 0)
+    mask = torch.gt(true_labels, -1)  # 计算所有的loss
     predicted_scores_selected = torch.masked_select(
         torch.squeeze(predicted_scores), mask)
     true_scores_selected = torch.masked_select(true_scores, mask)
@@ -44,7 +44,8 @@ def train_classification(model, train_datas, val_datas, batchsize, path, epoch):
     os.makedirs(path, exist_ok=True)
     logging.basicConfig(filename=path+"/log",
                         level=logging.DEBUG, filemode='w')
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(
+        model.parameters(), lr=0.001, weight_decay=0.1)  # 这里设置了l2正则化系数
     model.train()
     for i in range(1, epoch+1):
         train_epoch_loss = []
@@ -56,7 +57,7 @@ def train_classification(model, train_datas, val_datas, batchsize, path, epoch):
                 train_graphs, train_feats)
             traincrossloss, trainmseloss = lossfunc(
                 train_labels, predicted_labels, train_scores, predicted_scores)
-            trainlosssum = traincrossloss + trainmseloss
+            trainlosssum = traincrossloss + trainmseloss*10  # 增强回归的损失
             trainlosssum.backward()
             optimizer.step()
             train_epoch_loss.append(
@@ -84,7 +85,7 @@ def train_classification(model, train_datas, val_datas, batchsize, path, epoch):
         print(metrics.confusion_matrix(val_labels, val_maxindexs))
 
         # 存储模型
-        if i != 0 and i % 2 == 0:
+        if i != 0 and i % 20 == 0:
             torch.save(model.state_dict(), path+'/{}.pt'.format(i))
 
 
