@@ -19,15 +19,16 @@ def arg_parse():
     parser.add_argument('--refer', type=str, default="coach")
     parser.add_argument('--bench', type=str, default="CYC2008")
     parser.add_argument('--graph', type=str, default="Krogan")
-    parser.add_argument('--refer_rate', type=int, default=2)
-    parser.add_argument('--random_rate', type=int, default=2)
+    parser.add_argument('--refer_rate', type=int, default=1)
+    parser.add_argument('--random_rate', type=int, default=1)
     parser.add_argument('--split', type=float, default=0.8)
     parser.add_argument('--seed', type=int, default=666)
-    return parser.parse_args()
+    # return parser.parse_args()
+    return parser.parse_args("--refer coach --bench CYC2008 --graph DIP --recompute 1".split(' '))
 
-    # return parser.parse_args("--refer dpclus --bench CYC2008 --graph Biogrid --recompute 1".split(' '))
+
 '''
-python first_stage.py --refer coach --bench CYC2008 --graph Biogrid --recompute 1
+python first_stage.py --refer coach --bench CYC2008 --graph Biogrid --recompute 0
 '''
 
 
@@ -56,18 +57,19 @@ def classification_process(args):
         bench_datasets[:bench_split], refer_datasets[:refer_split], random_datasets[:random_split], args.refer_rate, args.random_rate)
     traindatas = [[item.graph, item.feat, item.label, item.score]
                   for item in tarindatas]
+    valsize = len(bench_datasets[bench_split:])
     valdatas = [[item.graph, item.feat, item.label, item.score]
-                for item in bench_datasets[:bench_split]+refer_datasets[:refer_split]+random_datasets[:random_split]]
+                for item in bench_datasets[bench_split:]+refer_datasets[refer_split:refer_split+valsize]+random_datasets[random_split:random_split+valsize]]
     random.shuffle(traindatas)
     random.shuffle(valdatas)
 
-    model = models.GCN_with_Topologi(
+    model = models.OnlyBaseFeature(
         nodefeatsize=66,
         edgefeatsize=19,
         graphfeatsize=10,
         hidden_size=128,
         gcn_layers=2,
-        output_size=3,
+        output_size=5,
         activate=None
     )
     model_path = "Model/saved_models/{}_{}_{}".format(model.name, datasets_name,

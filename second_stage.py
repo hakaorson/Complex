@@ -2,6 +2,7 @@ from Data import data
 from Model import models
 from Model import flow
 import random
+import numpy as np
 import torch
 import time
 import pickle
@@ -9,6 +10,7 @@ import os
 import subprocess
 from Check import metrix
 import argparse
+from sklearn.externals import joblib
 
 
 def arg_parse():
@@ -26,13 +28,32 @@ def arg_parse():
     parser.add_argument('--seed', type=int, default=666)
     parser.add_argument('--modelpath', type=str)
     parser.add_argument('--modelepoch', type=int)
+    parser.add_argument('--modeltype', type=str, default="sklearn")
     return parser.parse_args()
-    #return parser.parse_args("--modelpath gcnwithtopo_CYC2008_DIP_coach_U_12_11_3_0 --modelepoch 50".split(" "))
+    # return parser.parse_args("--refer coach --bench CYC2008 --graph DIP --recompute 0 --modelpath onlydeepwalk_CYC2008_Biogrid_coach_U_12_11_13_28".split(" "))
 
 
 '''
-python second_stage.py --refer coach --bench CYC2008 --graph Biogrid --recompute 0 --modelpath gcnwithtopo_CYC2008_Biogrid_coach_U_12_11_4_53 --modelepoch 50
+python second_stage.py --modeltype pytorch --refer coach --bench CYC2008 --graph Biogrid --recompute 0 --modelpath gcnwithtopo_CYC2008_Biogrid_coach_U_12_11_11_44 --modelepoch 6
+python second_stage.py --refer coach --bench CYC2008 --graph Biogrid --recompute 0 --modelpath onlydeepwalk_CYC2008_Biogrid_coach_U_12_11_13_28
+
+
 '''
+
+
+class warpedmodel():
+    def __init__(self, skmodel, pytorchmodel):
+        self.skmodel = skmodel
+        self.pytorchmodel = pytorchmodel
+
+    def __call__(self, graphs, feats):
+        pyt = self.pytorchmodel(graphs, feats)
+        svc_res = self.skmodel.predict(pyt)
+        res = [[0, 0, 0] for i in range(len(svc_res))]
+        for i in range(len(svc_res)):
+            res[i][svc_res[i]] = 1
+        return np.array(res), [0 for i in range(len(svc_res))]
+
 
 if __name__ == "__main__":
     args = arg_parse()
@@ -41,7 +62,7 @@ if __name__ == "__main__":
         basedir="Data/", recompute=args.recompute, refername=args.refer, graphname=args.graph)
     datas = [[item.graph, item.feat, item.label, item.score]
              for item in datas]
-    model = models.GCN_with_Topologi(
+    model = models.OnlyDeepwalk(
         nodefeatsize=66,
         edgefeatsize=19,
         graphfeatsize=10,
@@ -50,9 +71,15 @@ if __name__ == "__main__":
         output_size=3,
         activate=None
     )
-    model.load_state_dict(torch.load(
-        "Model/saved_models/{}/{}.pt".format(args.modelpath, args.modelepoch)))
+    if args.modeltype == "sklearn":
+        skmodel = joblib.load(
+            "Model/saved_models/{}/sklearn_model".format(args.modelpath))
+        model = warpedmodel(skmodel, model)
+    else:
+        model.load_state_dict(torch.load(
+            "Model/saved_models/{}/{}.pt".format(args.modelpath, args.modelepoch)))
     res = flow.select_classification(model, datas)
+    # 需要分析一下
     expand_datas_selected = []
     for index, val in enumerate(res):
         if val:

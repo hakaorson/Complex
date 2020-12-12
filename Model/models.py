@@ -2,6 +2,7 @@ from torch import nn as torchnn
 import torch
 import dgl
 import dgl.nn as dglnn
+from Model import diffpool
 
 
 class DGLInit(torchnn.Module):
@@ -94,7 +95,7 @@ class GCN_readout(torchnn.Module):
 
 
 class Linear_process(torchnn.Module):
-    def __init__(self, input_size, hidden_size, output_size, layer_num=1):
+    def __init__(self, input_size, hidden_size, output_size, layer_num=None):
         super().__init__()
         self.layers = torchnn.ModuleList()
 
@@ -125,7 +126,7 @@ class GCN_with_Topologi(torchnn.Module):
         self.gcn_process = GCN_process(hidden_size, gcn_layers)
         self.gcn_predict = GCN_readout(hidden_size)
         self.linear = Linear_process(
-            hidden_size*2, hidden_size, output_size, layer_num=1)
+            hidden_size*2, hidden_size, output_size, layer_num=2)
         self.predict_score = torch.nn.Linear(hidden_size*2, 1)
         self.final_activate = activate
 
@@ -133,6 +134,34 @@ class GCN_with_Topologi(torchnn.Module):
         dgl_data_init = self.nodeedge_feat_init(dgl_data)
         dgl_data_gcn = self.gcn_process(dgl_data_init)
         dgl_data_feat = self.gcn_predict(dgl_data_gcn)
+
+        base_feat = self.base_feat_init(base_data)
+        class_predict = self.linear(torch.cat([dgl_data_feat, base_feat], -1))
+        class_predict = self.final_activate(
+            class_predict) if self.final_activate else class_predict
+        score_predict = torch.nn.Sigmoid()(self.predict_score(
+            torch.cat([dgl_data_feat, base_feat], -1)))
+        return class_predict, score_predict
+
+
+class OnlyBaseFeature(torchnn.Module):
+    def __init__(self, nodefeatsize, edgefeatsize, graphfeatsize, hidden_size, gcn_layers, output_size, activate):
+        super().__init__()
+        self.name = "OnlyUseBaseFeature"
+        self.nodeedge_feat_init = DGLInit(
+            nodefeatsize, edgefeatsize, hidden_size)
+        self.base_feat_init = torchnn.Linear(
+            graphfeatsize, hidden_size, bias=True)
+
+        self.gcn_predict = GCN_readout(hidden_size)
+        self.linear = Linear_process(
+            hidden_size*2, hidden_size, output_size, layer_num=2)
+        self.predict_score = torch.nn.Linear(hidden_size*2, 1)
+        self.final_activate = activate
+
+    def forward(self, dgl_data, base_data):
+        dgl_data_init = self.nodeedge_feat_init(dgl_data)
+        dgl_data_feat = self.gcn_predict(dgl_data_init)
 
         base_feat = self.base_feat_init(base_data)
         class_predict = self.linear(torch.cat([dgl_data_feat, base_feat], -1))
@@ -157,13 +186,9 @@ class OnlyDeepwalk(torchnn.Module):
         super().__init__()
         self.name = "onlydeepwalk"
         self.deepwalkfeatget = DeepwalkFeatGetor()
-        self.linear = Linear_process(64, hidden_size, output_size, layer_num=1)
-        self.final_activate = activate
 
     def forward(self, dgl_data, base_data):
-        deepwalk_feat = self.deepwalkfeatget(dgl_data)
-        deepwalk_predict = self.linear(deepwalk_feat)
-        return self.final_activate(deepwalk_predict) if self.final_activate else deepwalk_predict
+        return self.deepwalkfeatget(dgl_data)
 
 
 if __name__ == '__main__':

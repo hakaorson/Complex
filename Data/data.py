@@ -48,15 +48,6 @@ def subgraphs(complexes, graph):
         sub_components = [item for item in sub_components]
         if len(sub_components) == 1 and len(sub_components[0]) == len(comp):
             res.append(sub_components[0])
-    #     matched_nodes = set()
-    #     for sub_component in sub_components:
-    #         res.append(sub_component)
-    #         matched_nodes = matched_nodes | sub_component
-    #     if len(matched_nodes) < len(comp):
-    #         subgraph_notcomplete_num += 1
-    # print("has {} protein not in graph, nodes:{}".format(
-    #     len(all_complex_nodes-all_graph_nodes), (all_complex_nodes-all_graph_nodes)))
-    # print("has {} graph is not complete".format(subgraph_notcomplete_num))
     return res
 
 
@@ -245,9 +236,6 @@ def get_global_nxgraph(node_path, edge_path, direct):
     nodes, nodematrix = get_datas(node_path)
     edges, edgematrix = get_datas(edge_path)
     edges = [list(item.split(' ')) for item in edges]
-    # 归一化处理
-    # nodematrix = dataprocess(nodematrix)
-    # edgematrix = dataprocess(edgematrix)
     nx_graph = nx.DiGraph()
     for index, item in enumerate(nodematrix):
         nx_graph.add_node(nodes[index], w=item)
@@ -288,22 +276,26 @@ def data_fusion(origin_bench_data, subgraphed_bench_data, refer_data, random_dat
     refer_data_neg, refer_data_pos = [], []
     for index, comp in enumerate(refer_data):
         if refer_scores[index] <= 0.25:
-            refer_data_neg.append(comp)
+            refer_data_neg.append([comp, refer_scores[index], 1])
         else:
-            refer_data_pos.append(comp)
+            refer_data_pos.append([comp, refer_scores[index], 2])
+    refer_data = refer_data_pos+refer_data_neg
+    random.shuffle(refer_data)
     random_scores = complex_score(random_data, origin_bench_data)
     random_data_neg, random_data_pos = [], []
     for index, comp in enumerate(random_data):
         if random_scores[index] <= 0.25:
-            random_data_neg.append(comp)
+            random_data_neg.append([comp, random_scores[index], 3])
         else:
-            random_data_pos.append(comp)
+            random_data_pos.append([comp, random_scores[index], 4])
+    random_data = random_data_pos+random_data_neg
+    random.shuffle(random_data)
     res_benchdata = [{'complexes': item, 'label': 0, 'score': 1}
                      for item in subgraphed_bench_data]  # 这些样本需要汇聚到一起
-    res_referdata = [{'complexes': item, 'label': 1, 'score': refer_scores[index]}
+    res_referdata = [{'complexes': item[0], 'label': item[2], 'score': item[1]}
                      for index, item in enumerate(refer_data)]
-    res_randomdata = [{'complexes': item, 'label': 2, 'score': random_scores[index]}
-                      for index, item in enumerate(random_data_neg)]  # 随即图要去除过于像正样本的部分
+    res_randomdata = [{'complexes': item[0], 'label': item[2], 'score': item[1]}
+                      for index, item in enumerate(random_data)]  # 随即图要去除过于像正样本的部分
     return res_benchdata, res_referdata, res_randomdata
 
 
@@ -316,7 +308,7 @@ def construct_and_storation_subgraphs(path, graph, subs, direct):
     os.makedirs(path)
     while begin_index < len(subs):
         next_index = min(begin_index+storation_size, len(subs))
-        cur_refer_data = subs[begin_index:next_index]
+        cur_refer_data = subs[begin_index: next_index]
         cur_datasets = [get_singlegraph(
             graph, item, direct, index+begin_index) for index, item in enumerate(cur_refer_data)]
         datasets.extend(cur_datasets)
@@ -351,7 +343,7 @@ def trainmodel_datasets(recompute=False, direct=False, graphname="DIP", benchnam
     subgraphed_bench_data = subgraphs(origin_bench_data, nx_graph)
     refer_data = read_complexes(refer_results_path)
     random_data = get_random_graphs(
-        nx_graph, [len(item) for item in origin_bench_data + refer_data], max(1000, len(subgraphed_bench_data)+len(refer_data)), multi=False)
+        nx_graph, [len(item) for item in origin_bench_data], max(1000, len(subgraphed_bench_data)+len(refer_data)), multi=False)
 
     # 接下来归并处理
     bench_data, refer_data, random_data = data_fusion(origin_bench_data,
