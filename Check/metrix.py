@@ -81,6 +81,7 @@ class ClusterQualityF1(ClusterQuality):
 
     def score(self):
         np_matrix = np.array(self.affinity_matrix)
+        # print(np.max(np_matrix, 0)[:10])
         bool_matrix = np_matrix >= self.threshold
         prec_matrix = np.sum(bool_matrix, 0) > 0  # 这个计算是不是有问题
         reca_matrix = np.sum(bool_matrix, 1) > 0

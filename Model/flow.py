@@ -129,7 +129,7 @@ def expand_selection(model, datas):
             predict_score = score_prediction[index]
             truescores.append(expand_scores[index])
             predictscores.append(predict_score)
-            if predict_label == 0 or predict_label == 2 or predict_score >= 0.25:
+            if predict_label == 0 or predict_score >= 0.25:
                 res.append(True)
             else:
                 res.append(False)

@@ -84,7 +84,6 @@ def CheckModel(args):
         if score >= 0.25:
             predict_true_count += 1
     print(predict_true_count/len(predictscores_selected))
-    # print(truescores_selected[:10])
 
     expand_f1computor = metrix.ClusterQualityF1(
         bench_datas, expand_datas_selected, metrix.NAAffinity, 0.25)
