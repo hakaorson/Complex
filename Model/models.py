@@ -85,15 +85,22 @@ class GCN_readout(torchnn.Module):
         self.activate = torchnn.LeakyReLU()
 
     def forward(self, dgl_data):
-        dgl_feat = torch.cat([
+        # dgl_feat = torch.cat([
+        #     dgl.mean_nodes(dgl_data, 'h'),
+        #     dgl.max_nodes(dgl_data, 'h'),
+        #     dgl.mean_edges(dgl_data, 'h'),
+        #     dgl.max_edges(dgl_data, 'h'),
+        # ], -1)
+        # # TODO 加上边的readout
+        # dgl_predict = self.activate(self.weight_node(dgl_feat))
+        # return dgl_predict
+        dgl_feat, _ = torch.max(torch.stack([
             dgl.mean_nodes(dgl_data, 'h'),
             dgl.max_nodes(dgl_data, 'h'),
             dgl.mean_edges(dgl_data, 'h'),
             dgl.max_edges(dgl_data, 'h'),
-        ], -1)
-        # TODO 加上边的readout
-        dgl_predict = self.activate(self.weight_node(dgl_feat))
-        return dgl_predict
+        ], 2), -1)
+        return dgl_feat
 
 
 class Linear_process(torchnn.Module):
@@ -115,7 +122,7 @@ class Linear_process(torchnn.Module):
         for singlelayer in self.layers:
             data = singlelayer(data)
             # data = self.batchnorm(data)
-        return self.activate(data)
+        return data
 
 
 class GCN_with_Topologi(torchnn.Module):

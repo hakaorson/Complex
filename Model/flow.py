@@ -13,39 +13,30 @@ import joblib
 
 
 def collate_long(samples):
-    train_graphs, train_feats, labels, scores = map(list, zip(*samples))
+    train_graphs, feats, labels, score_prediction = map(list, zip(*samples))
     batch_graph = dgl.batch(train_graphs)
-    batch_feats = torch.tensor(train_feats, dtype=torch.float32)
-    batch_labels = torch.tensor(labels, dtype=torch.long)
-    batch_scores = torch.tensor(scores, dtype=torch.float32)
+    batch_feats = torch.stack(feats, 0)
+    batch_labels = torch.stack(labels, 0)
+    batch_scores = torch.stack(score_prediction, 0)
     return batch_graph, batch_feats, batch_labels, batch_scores
 
 
-def collate_float(samples):
-    train_graphs, train_feats, labels, scores = map(list, zip(*samples))
-    batch_graph = dgl.batch(train_graphs)
-    batch_feats = torch.tensor(train_feats, dtype=torch.float32)
-    batch_labels = torch.tensor(labels, dtype=torch.float32)
-    batch_scores = torch.tensor(scores, dtype=torch.float32)
-    return batch_graph, batch_feats, batch_labels, batch_scores
-
-
-def lossfunc(true_labels, predicted_labels, true_scores, predicted_scores):
+def lossfunc(true_labels, predicted_labels, true_scores, score_prediction):
     Crossloss = torch.nn.CrossEntropyLoss()
     Mseloss = torch.nn.MSELoss()
     mask = torch.gt(true_labels, -1)  # 计算所有的loss
-    predicted_scores_selected = torch.masked_select(
-        torch.squeeze(predicted_scores), mask)
+    score_prediction_selected = torch.masked_select(
+        torch.squeeze(score_prediction), mask)
     true_scores_selected = torch.masked_select(true_scores, mask)
-    return Crossloss(predicted_labels, true_labels), Mseloss(predicted_scores_selected, true_scores_selected)
+    return Crossloss(predicted_labels, true_labels), Mseloss(score_prediction_selected, true_scores_selected)
 
 
-def train_classification(model, train_datas, val_datas, batchsize, path, epoch):
+def train_classification(model, train_datas, val_datas, batchsize, path, epoch, cudaindex, lr):
     os.makedirs(path, exist_ok=True)
     logging.basicConfig(filename=path+"/log",
                         level=logging.DEBUG, filemode='w')
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=0.001, weight_decay=0.1)  # 这里设置了l2正则化系数
+        model.parameters(), lr=lr, weight_decay=0.1)  # 这里设置了l2正则化系数
     model.train()
     for i in range(1, epoch+1):
         train_epoch_loss = []
@@ -53,10 +44,10 @@ def train_classification(model, train_datas, val_datas, batchsize, path, epoch):
             train_datas, batch_size=batchsize, shuffle=True, collate_fn=collate_long)
         for train_graphs, train_feats, train_labels, train_scores in train_data_loader:
             optimizer.zero_grad()
-            predicted_labels, predicted_scores = model(
+            predicted_labels, score_prediction = model(
                 train_graphs, train_feats)
             traincrossloss, trainmseloss = lossfunc(
-                train_labels, predicted_labels, train_scores, predicted_scores)
+                train_labels, predicted_labels, train_scores, score_prediction)
             trainlosssum = traincrossloss + trainmseloss*10  # 增强回归的损失
             trainlosssum.backward()
             optimizer.step()
@@ -121,54 +112,28 @@ def train_svmclassify(model, train_datas, val_datas, batchsize, path, epoch):
     print(msg)
 
 
-def train_regression(model, train_datas, val_datas, batchsize, path, epoch):
-    loss = torch.nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
-    model.train()
-    for i in range(1, epoch+1):
-        train_epoch_loss = []
-        train_data_loader = torch.utils.data.DataLoader(
-            train_datas, batch_size=batchsize, shuffle=True, collate_fn=collate_float)
-        for train_graphs, train_feats, train_labels in train_data_loader:
-            train_prediction = model(train_graphs, train_feats)
-            train_loss = loss(train_prediction, train_labels)
-            optimizer.zero_grad()
-            train_loss.backward()
-            optimizer.step()
-            train_epoch_loss.append(train_loss.detach().item())  # 每一个批次的损失
-
-        # validata
-        val_graphs, val_feats, val_labels = collate_float(
-            val_datas)  # 产生一个batch
-        val_predictions = model(val_graphs, val_feats)
-        val_epoch_loss = loss(
-            val_predictions, val_labels).detach().item()
-
-        print('epoch {} train_loss:'.format(i), sum(train_epoch_loss)/len(train_epoch_loss),
-              'val_loss:', val_epoch_loss)
-
-        # 存储模型
-        if i != 0 and i % 2 == 0:
-            os.makedirs(path, exist_ok=True)
-            torch.save(model.state_dict(), path+'/{}.pt'.format(i))
-
-
-def select_classification(model, datas):
-    select_data_loader = torch.utils.data.DataLoader(
-        datas, batch_size=128, shuffle=True, collate_fn=collate_long)
+def expand_selection(model, datas):
+    expand_data_loader = torch.utils.data.DataLoader(
+        datas, batch_size=128, shuffle=False, collate_fn=collate_long)  # 注意这里一定不能shuffle，否在数据就会不一致
     res = []
-    for select_graphs, select_feats, select_labels, select_scores in select_data_loader:
-        predictions, scores = model(select_graphs, select_feats)
-        # predictions = torch.nn.Softmax()(predictions)
-        for index, item in enumerate(predictions):
-            # print(select_scores)
-            if predictions[index][0] == max(predictions[index]) or scores[index] >= 0.25:
+    truescores = []
+    predictscores = []
+    for index, (expand_graphs, expand_feats, expand_labels, expand_scores) in enumerate(expand_data_loader):
+        class_prediction, score_prediction = model(expand_graphs, expand_feats)
+        class_prediction = torch.nn.Softmax()(class_prediction)
+        score_prediction = torch.squeeze(score_prediction)
+        maxindexs = torch.argmax(class_prediction, -1).detach()
+        print("fusion {}\n".format(index),
+              metrics.confusion_matrix(expand_labels, maxindexs))
+        for index, predict_label in enumerate(maxindexs):
+            predict_score = score_prediction[index]
+            truescores.append(expand_scores[index])
+            predictscores.append(predict_score)
+            if predict_label == 0 or predict_label == 2 or predict_score >= 0.25:
                 res.append(True)
-            # if item[0] >= thred:
-            #     res.append(True)
             else:
                 res.append(False)
-    return res
+    return res, truescores, predictscores
 
 
 if __name__ == "__main__":

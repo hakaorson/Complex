@@ -160,12 +160,12 @@ def merged_data(items):
     return res
 
 
-def complex_score(complexes, targets):
+def complex_score(complexes, benchs):
     af_matrix = [[0 for j in range(len(targets))]for i in range(
         len(complexes))]
     for i in range(len(complexes)):
-        for j in range(len(targets)):
-            comp, targ = complexes[i], targets[j]
+        for j in range(len(benchs)):
+            comp, targ = complexes[i], benchs[j]
             af_matrix[i][j] = pow(len(comp & targ), 2)/(len(comp)*len(targ))
     return [max(af_matrix[index]) for index, comp in enumerate(complexes)]
 
@@ -290,9 +290,9 @@ def add_labels_on_datas(origin_bench_data, subgraphed_bench_data, refer_data, ra
     refer_scores = complex_score(refer_data, origin_bench_data)
     refer_data_neg, refer_data_pos = [], []
     for index, comp in enumerate(refer_data):
-        if refer_scores[index] <= 0.25:
+        if refer_scores[index] <= 0.20:
             refer_data_neg.append([comp, refer_scores[index]])
-        elif refer_scores[index] > 0.25:
+        elif refer_scores[index] > 0.40:
             refer_data_pos.append([comp, refer_scores[index]])
         else:
             pass
@@ -301,9 +301,9 @@ def add_labels_on_datas(origin_bench_data, subgraphed_bench_data, refer_data, ra
     random_scores = complex_score(random_data, origin_bench_data)
     random_data_neg, random_data_pos = [], []
     for index, comp in enumerate(random_data):
-        if random_scores[index] <= 0.25:
+        if random_scores[index] <= 0.20:
             random_data_neg.append([comp, random_scores[index]])
-        elif random_scores[index] > 0.25:
+        elif random_scores[index] > 0.40:
             random_data_pos.append([comp, random_scores[index]])
         else:
             pass
@@ -335,7 +335,7 @@ def construct_and_storation_subgraphs(path, graph, subs, direct):
 
 
 def reload_subgraphs(path):
-    file_names = os.listdir(path)
+    file_names = list(map(str, sorted(map(int, os.listdir(path)))))
     result = []
     for file_name in file_names:
         with open(path+'/'+file_name, 'rb')as f:
@@ -391,7 +391,7 @@ def selectcomplex_datasets(recompute=False, direct=False, graphname="DIP", bench
     nx_graph = get_global_nxgraph(nodesfeat_path, edgesfeat_path, direct)
     bench_data = read_complexes(bench_path)
     scores = complex_score(expand_refer_data, bench_data)
-    expand_refer_data_with_label = [{'complexes': item, 'label': -1, 'score': scores[index]}
+    expand_refer_data_with_label = [{'complexes': item, 'label': 2 if scores[index] >= 0.25 else 3, 'score': scores[index]}
                                     for index, item in enumerate(expand_refer_data)]
     datasets = construct_and_storation_subgraphs(
         select_datasets_expand_path, nx_graph, expand_refer_data_with_label, direct)
