@@ -1,4 +1,4 @@
-Doanload from website https://www.paccanarolab.org/cluster-one/
+
 去除了有些有括号的id
 在uniprot上面有3个id不匹配：snR17a snR17b YKR059W
 其中可以确定手动添加的：
@@ -7,3 +7,5 @@ P10081	MSEGITDIEESQIQTNYDKVVYKFDDMELDENLLRGVFGYGFEEPSAIQQRAIMPIIEGHDVLAQAQSGTGKT
 最终一共5567条数据
 
 cyc2008中有1个蛋白质不在Biogrid中
+
+注意biogrid还具有一个多验证数据集https://wiki.thebiogrid.org/doku.php/biogrid_mv，将主流的网络融合到了一起  

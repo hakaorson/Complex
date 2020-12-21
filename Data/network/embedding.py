@@ -11,6 +11,7 @@ from goatools import obo_parser
 import pandas as pd
 import subprocess
 from embedding_support.gae import train as gaetrain
+from matplotlib import pyplot as plt
 
 
 def findSubcellWords(str_input):
@@ -526,8 +527,43 @@ def main(name):
     processFeat(name+'/edges_feat', 'edge')
 
 
+def showPPIgraph(path):
+    graphpath, savepath = path+"/edges", path+"/pictures"
+    graph = construct_graph(graphpath, direction=False)
+    # pos = nx.spring_layout(graph)
+    de = [graph.degree[node] for node in graph.nodes]
+    pos = nx.spring_layout(graph)
+    nx.draw_networkx(graph, pos=pos, node_size=de, with_labels=False,
+                     node_color=de, linewidths=None, width=1.0, edge_color='#858585')
+    plt.savefig(savepath)
+    plt.show()
+    pass
+
+
+def statictic_bigraph(path):
+    graphpath = path+"/edges"
+    ppigraph = construct_graph(graphpath, direction=False)
+    info = {}
+    info['node_num'] = len(ppigraph.nodes)
+    info['edge_num'] = len(ppigraph.edges)
+    # info['clustering'] = nx.clustering(ppigraph)
+    info['average_degree'] = (info['edge_num']*2)/info['node_num']
+    info['density'] = nx.density(ppigraph)
+    info['average_clustering'] = nx.average_clustering(ppigraph)
+    info['number_connected_components'] = nx.number_connected_components(
+        ppigraph)
+    maxsub_nodes = next(nx.connected_components(ppigraph))
+    maxsub_ppigraph = nx.subgraph(ppigraph, maxsub_nodes)
+    info['max_subgraph_node_num'] = len(maxsub_ppigraph.nodes)
+    # info['betweenness_centrality'] = nx.betweenness_centrality(maxsub_ppigraph)
+    info['transitivity'] = nx.transitivity(ppigraph)
+    info['diameter'] = nx.diameter(maxsub_ppigraph)
+    print(path)
+    print(info)
+
+
 if __name__ == "__main__":
-    main("Biogrid")
+    for name in ['DIP', 'Krogan', 'Biogrid', 'Gavin']:
+        statictic_bigraph(name)
+    # main("Biogrid")
     # main("DIP")
-    # processFeat("DIP"+'/nodes_feat', 'node')
-    # processFeat("DIP"+'/edges_feat', 'edge')
