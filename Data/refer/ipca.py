@@ -38,7 +38,7 @@ def ipca(filename):
 
     seed_nodes = sorted(data, key=lambda k: (
         weights[k], len(data[k])), reverse=True)
-    file = open('Data/cut/dip2_ipca_complex','wb')
+    file = open('Data/datasets/refer_results/temp/ipca','wb')
     for seed in seed_nodes:  # get highest degree node
         if seed not in unvisited:
             continue

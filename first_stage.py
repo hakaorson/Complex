@@ -21,21 +21,60 @@ def arg_parse():
     parser.add_argument('--refer', type=str, default="coach")
     parser.add_argument('--bench', type=str, default="CYC2008")
     parser.add_argument('--graph', type=str, default="Krogan")
-    parser.add_argument('--rebalance', type=int, default=0)
+    parser.add_argument('--rebalance', type=int, default=1)
     parser.add_argument('--split', type=float, default=0.8)
     parser.add_argument('--seed', type=int, default=666)
     parser.add_argument('--cuda', type=int, default=-1)
+    parser.add_argument('--epoch', type=int, default=30)
     parser.add_argument('--lr', type=float, default=0.001)
+    parser.add_argument('--info', type=str, default="")
+    parser.add_argument('--batchsize', type=int, default=32)
+    parser.add_argument('--modelname', type=str)
+
+    parser.add_argument('--nodefeatsize', type=int, default=82)
+    parser.add_argument('--edgefeatsize', type=int, default=19)
+    parser.add_argument('--graphfeatsize', type=int, default=10)
+    parser.add_argument('--hidden_size', type=int, default=128)
+    parser.add_argument('--gcn_layers', type=int, default=2)
+    parser.add_argument('--output_size', type=int, default=4)
+    # 下面是加载模型参数
     parser.add_argument('--modelpath', type=str)
     parser.add_argument('--modelepoch', type=int)
-    parser.add_argument('--modeltype', type=str, default="pytorch")
-    # return parser.parse_args()
-    return parser.parse_args("--refer clique_percolation --bench Other --graph DIP --recompute 0 --modelpath gcnwithtopo_Other_DIP_coach_U_12_14_7_32 --modelepoch 100".split(' '))
+    parser.add_argument('--sklearnmodel', type=int, default=0)
+    return parser.parse_args()
+    # return parser.parse_args("--refer coach --bench Other --graph DIP --info final --modelname Only_struct_GCN --recompute 1".split(' '))
 
 
 '''
-python3 first_stage.py --refer coach --bench CYC2008 --graph Biogrid --recompute 0
-python3 first_stage.py --refer coach --bench Other --graph DIP --recompute 1
+python3 first_stage.py --refer coach --bench Other --graph Biogrid --info final --modelname Only_struct_GCN --recompute 0
+python3 first_stage.py --refer coach --bench Other --graph Biogrid --info final --modelname Only_Node_feat_GCN --gcn_layers 1 --recompute 0
+python3 first_stage.py --refer coach --bench Other --graph Biogrid --info final --modelname Only_Edge_feat_GCN --recompute 0
+python3 first_stage.py --refer coach --bench Other --graph Biogrid --info final --modelname Fusion_GCN --recompute 0
+python3 first_stage.py --refer coach --bench Other --graph Biogrid --info final --modelname Only_Topologi --recompute 0
+python3 first_stage.py --refer coach --bench Other --graph Biogrid --info final --modelname GCN_with_Topologi_with_topk --recompute 0
+python3 first_stage.py --refer coach --bench Other --graph Biogrid --info final --modelname GCN_with_Topologi_with_max --recompute 0
+
+python3 first_stage.py --refer coach --bench Other --graph DIP --info final --modelname Only_struct_GCN --recompute 0
+python3 first_stage.py --refer coach --bench Other --graph DIP --info final --modelname Only_Node_feat_GCN --gcn_layers 0
+python3 first_stage.py --refer coach --bench Other --graph DIP --info final --modelname Only_Edge_feat_GCN --recompute 0
+python3 first_stage.py --refer coach --bench Other --graph DIP --info final --modelname Fusion_GCN --recompute 0
+python3 first_stage.py --refer coach --bench Other --graph DIP --info final --modelname Only_Topologi --recompute 0
+python3 first_stage.py --refer coach --bench Other --graph DIP --info final --modelname GCN_with_Topologi_with_topk --recompute 0
+python3 first_stage.py --refer coach --bench Other --graph DIP --info final --modelname GCN_with_Topologi_with_max --recompute 0
+
+
+python3 second_stage.py --bench Other --graph Biogrid --refer clique_percolation --recompute 1
+python3 second_stage.py --bench Other --graph Biogrid --refer ipca --recompute 1
+python3 second_stage.py --bench Other --graph Biogrid --refer mcode --recompute 1
+python3 second_stage.py --bench Other --graph Biogrid --refer graph_entropy --recompute 1
+python3 second_stage.py --bench Other --graph Biogrid --refer dpclus --recompute 1
+
+
+python3 second_stage.py --bench Other --graph DIP --refer clique_percolation --recompute 1
+python3 second_stage.py --bench Other --graph DIP --refer ipca --recompute 1
+python3 second_stage.py --bench Other --graph DIP --refer mcode --recompute 1
+python3 second_stage.py --bench Other --graph DIP --refer graph_entropy --recompute 1
+python3 second_stage.py --bench Other --graph DIP --refer dpclus --recompute 1
 '''
 
 
@@ -74,21 +113,10 @@ def to_tensor(datas, cudaindex):
     return res
 
 
-def get_model():
-    return models.GCN_with_Topologi(
-        nodefeatsize=82,
-        edgefeatsize=19,
-        graphfeatsize=10,
-        hidden_size=128,
-        gcn_layers=2,
-        output_size=4,
-        activate=None
-    )
-
-
 def classification_process(args):
     datasets_list_by_class, datasets_name = data.trainmodel_datasets(
         basedir="Data/", recompute=args.recompute, refername=args.refer, benchname=args.bench, graphname=args.graph)
+    print([len(item) for item in datasets_list_by_class])
     train_datasets, val_datasets = split_datasets(
         datasets_list_by_class, args.split)
     if args.rebalance:
@@ -98,20 +126,17 @@ def classification_process(args):
     val_datasets = [[item.graph, item.feat, item.label, item.score]
                     for item in reduce(lambda a, b: a+b, val_datasets)]
 
-    model = get_model()
+    model = models.get_model(args)
 
     if args.cuda >= 0:
         model = model.cuda("cuda:{}".format(args.cuda))
     train_datasets = to_tensor(train_datasets, args.cuda)
     val_datasets = to_tensor(val_datasets, args.cuda)
 
-    model_path = "Model/saved_models/{}_{}_{}".format(model.name, datasets_name,
-                                                      time.strftime('{}_{}_{}_{}'.format(time.localtime().tm_mon, time.localtime().tm_mday, ((time.localtime().tm_hour)) % 24, time.localtime().tm_min)))
-    default_epoch = 5000
-    batchsize = 32
+    model_path = "Model/saved_models/{}_{}_{}_{}".format(args.modelname, datasets_name, args.info,
+                                                         time.strftime('{}_{}_{}_{}'.format(time.localtime().tm_mon, time.localtime().tm_mday, ((time.localtime().tm_hour)+8) % 24, time.localtime().tm_min)))
     flow.train_classification(model, train_datasets, val_datasets,
-                              batchsize, model_path, default_epoch, args.cuda, args.lr)
-
+                              args.batchsize, model_path, args.epoch, args.cuda, args.lr)
 
 
 if __name__ == "__main__":

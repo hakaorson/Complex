@@ -1,5 +1,6 @@
 from Model import models
 from sklearn.metrics import precision_score
+from sklearn.preprocessing import StandardScaler
 import torch
 import pickle
 import dgl
@@ -16,6 +17,10 @@ def collate_long(samples):
     train_graphs, feats, labels, score_prediction = map(list, zip(*samples))
     batch_graph = dgl.batch(train_graphs)
     batch_feats = torch.stack(feats, 0)
+    batch_npfeats = np.array(batch_feats)
+    batch_npfeats = StandardScaler().fit_transform(
+        batch_npfeats)  # batch feat 进行了标准化处理，注意测试的时候也需要做相同的处理
+    batch_feats = torch.tensor(batch_npfeats, dtype=torch.float32)
     batch_labels = torch.stack(labels, 0)
     batch_scores = torch.stack(score_prediction, 0)
     return batch_graph, batch_feats, batch_labels, batch_scores
@@ -24,11 +29,12 @@ def collate_long(samples):
 def lossfunc(true_labels, predicted_labels, true_scores, score_prediction):
     Crossloss = torch.nn.CrossEntropyLoss()
     Mseloss = torch.nn.MSELoss()
+    BinLogloss = torch.nn.BCELoss()
     mask = torch.gt(true_labels, -1)  # 计算所有的loss
     score_prediction_selected = torch.masked_select(
         torch.squeeze(score_prediction), mask)
     true_scores_selected = torch.masked_select(true_scores, mask)
-    return Crossloss(predicted_labels, true_labels), Mseloss(score_prediction_selected, true_scores_selected)
+    return Crossloss(predicted_labels, true_labels), BinLogloss(score_prediction_selected, true_scores_selected)
 
 
 def train_classification(model, train_datas, val_datas, batchsize, path, epoch, cudaindex, lr):
@@ -76,7 +82,7 @@ def train_classification(model, train_datas, val_datas, batchsize, path, epoch, 
         print(metrics.confusion_matrix(val_labels, val_maxindexs))
 
         # 存储模型
-        if i != 0 and i % 20 == 0:
+        if i != 0 and i % 5 == 0:
             torch.save(model.state_dict(), path+'/{}.pt'.format(i))
 
 
@@ -112,9 +118,9 @@ def train_svmclassify(model, train_datas, val_datas, batchsize, path, epoch):
     print(msg)
 
 
-def expand_selection(model, datas):
+def expand_selection(model, datas, batchsize):
     expand_data_loader = torch.utils.data.DataLoader(
-        datas, batch_size=128, shuffle=False, collate_fn=collate_long)  # 注意这里一定不能shuffle，否在数据就会不一致
+        datas, batch_size=batchsize, shuffle=False, collate_fn=collate_long)  # 注意这里一定不能shuffle，否在数据就会不一致
     res = []
     truescores = []
     predictscores = []

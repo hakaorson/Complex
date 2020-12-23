@@ -12,6 +12,7 @@ import pandas as pd
 import subprocess
 from embedding_support.gae import train as gaetrain
 from matplotlib import pyplot as plt
+from sklearn.preprocessing import StandardScaler
 
 
 def findSubcellWords(str_input):
@@ -89,10 +90,11 @@ def read_uniprotkb(path):
             else headslist.index('Entry')
         seqIndex = headslist.index('Sequence')
         subcellIndex = headslist.index('Subcellular location [CC]')
+        # print(subcellIndex)
         goIndex = headslist.index('Gene ontology IDs')
         domainIndex = headslist.index('Cross-reference (Pfam)')
         for line in f:
-            linelist = line.split('\t')
+            linelist = line.strip().split('\t')
             data = {}
             data['seq'] = linelist[seqIndex] if linelist[seqIndex] != '' else []
             data['go'] = linelist[goIndex].replace(' ', '').split(
@@ -102,6 +104,8 @@ def read_uniprotkb(path):
             linelist[domainIndex] = linelist[domainIndex].strip()
             data['domain'] = linelist[domainIndex][:-
                                                    1].split(';') if linelist[domainIndex] != '' else []
+            if len(linelist[enterIndex]) > 7:
+                print()
             res[linelist[enterIndex]] = data
     return res
 
@@ -441,18 +445,14 @@ def deepwalk(name, nodes, edges):
 def compute_node_feats(name, nodes, edges, uniprot_data):
     blast_map = read_mapping("embedding_support/blast/POSSUM_DATA")
     deepwalkres = deepwalk(name, nodes, edges)
-    # gaetrain.gae_test_no_feat()
-    gaeres = gaetrain.gae_embedding(edges)
     protein_default_size = sum([len(uniprot_data[key]['seq'])
                                 for key in uniprot_data.keys()])/len(uniprot_data.keys())
-    # randomGCN = randomgcn(nodes, edges)
     res = []
     for node in nodes:
         tempEmb = {}
         tempEmb['id'] = [node]
         # tempEmb['blast'] = compute_node_feat_blast(blast_map, node)#不再计算blast特征
         tempEmb['deepwalk'] = deepwalkres[node]
-        tempEmb['gae'] = gaeres[node]
         tempEmb['len'] = [len(uniprot_data[node]['seq']) if node in uniprot_data.keys(
         ) else int(protein_default_size)]
         res.append(tempEmb)
@@ -527,6 +527,57 @@ def main(name):
     processFeat(name+'/edges_feat', 'edge')
 
 
+def read_feat_datas(data_path):
+    ids, datas = [], []
+    with open(data_path, 'r') as f:
+        featsnames = next(f).strip().split('\t')
+        for item in f:
+            item_splited = item.strip().split('\t')
+            ids.append(item_splited[0])
+            datas.append(list(map(float, item_splited[1:])))
+    return ids, datas, featsnames
+
+
+def append_gae_feat(name):
+    nodes, node_feats, nfeat_names = read_feat_datas(
+        name+'/nodes_feat_processed')
+    edges, edge_feats, efeat_names = read_feat_datas(
+        name+'/edges_feat_processed')
+    st_process = StandardScaler()
+    node_feats = st_process.fit_transform(np.array(node_feats))
+    edge_feats = st_process.fit_transform(np.array(edge_feats))
+    biggraph = nx.Graph()
+    for node_index in range(len(nodes)):
+        biggraph.add_node(nodes[node_index], w=node_feats[node_index])
+    for edge_index in range(len(edges)):
+        v0, v1 = list(edges[edge_index].split(' '))
+        biggraph.add_edge(v0, v1, w=edge_feats[edge_index])
+    for node in biggraph.nodes:
+        neibor_feats = []
+        for nei in nx.neighbors(biggraph, node):
+            neibor_feats.append(biggraph[node][nei]['w'])
+        mean_feat = list(np.mean(np.array(neibor_feats), 0))
+        fusion_feat = mean_feat+list(biggraph.nodes[node]['w'])
+        biggraph.nodes[node]['f'] = fusion_feat
+    gaeres = gaetrain.gae_embedding(biggraph)
+    node_feats = np.concatenate((node_feats, gaeres), -1)
+    nfeat_names.extend('gae_{}'.format(index)
+                       for index in range(gaeres.shape[-1]))
+    write_back(name+'/nodes_feat_final', nodes, node_feats, nfeat_names)
+    write_back(name+'/edges_feat_final', edges, edge_feats, efeat_names)
+
+
+def write_back(path, ids, feats, names):
+    with open(path, 'w') as f:
+        name_string = '\t'.join(names)+'\n'
+        f.write(name_string)
+        for index in range(len(ids)):
+            single_id = [ids[index]]
+            single_feat = list(feats[index])
+            single_line = '\t'.join(map(str, single_id+single_feat))+'\n'
+            f.write(single_line)
+
+
 def showPPIgraph(path):
     graphpath, savepath = path+"/edges", path+"/pictures"
     graph = construct_graph(graphpath, direction=False)
@@ -563,7 +614,11 @@ def statictic_bigraph(path):
 
 
 if __name__ == "__main__":
-    for name in ['DIP', 'Krogan', 'Biogrid', 'Gavin']:
-        statictic_bigraph(name)
+    # for name in ['DIP', 'Krogan', 'Biogrid', 'Gavin']:
+    #     statictic_bigraph(name)
+
     # main("Biogrid")
-    # main("DIP")
+    # append_gae_feat("Biogrid")
+
+    main("DIP")
+    append_gae_feat("DIP")

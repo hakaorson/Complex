@@ -1,5 +1,6 @@
 import os
 import subprocess
+import time
 
 
 class baseMethod():
@@ -17,13 +18,15 @@ class baseMethod():
             "D:\software\Anaconda\envs\python2.7\python.exe") else "python2.7"
         cmd = [py2, self.method_path, self.graph_path]
         # print(cmd)
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT)
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE)
         res = []
         while p.poll() is None:
+
             line = p.stdout.readline().decode("utf8").strip()
             if len(line.strip()):  # 空行需要删除
+                # print(line)
                 res.append(line)
+        time.sleep(5)
         self.writecomplexes(res)
         return
 
@@ -50,7 +53,7 @@ class dpclus_method(baseMethod):
     def writecomplexes(self, cmd_res):
         with open(self.res_path, 'w') as f:
             for index, item in enumerate(cmd_res):
-                if index % 2 == 0:
+                if len(item) and item[0] not in [str(item) for item in range(10)]:
                     f.write(item+'\n')
 
 
@@ -74,24 +77,26 @@ class coach_method(baseMethod):
                 f.write(item+'\n')
 
 
+class graph_entropy_method(baseMethod):
+    def __init__(self, graph_path, res_path, expand, basedir):
+        super().__init__("graph_entropy", graph_path, res_path, expand, basedir)
+
+    def writecomplexes(self, cmd_res):
+        with open(self.res_path, 'w') as f:
+            for index, item in enumerate(cmd_res):
+                if len(item) and item[0] not in [str(item) for item in range(10)]:
+                    f.write(item+'\n')
+
+
 class mcode_method(baseMethod):
     def __init__(self, graph_path, res_path, expand, basedir):
         super().__init__("mcode", graph_path, res_path, expand, basedir)
 
     def writecomplexes(self, cmd_res):
-        res, index = [], 0
-        start = False
-        while(index < len(cmd_res)):
-            if start:
-                if len(cmd_res[index]):
-                    res.append(cmd_res[index])
-                    index += 1
-            if index < len(cmd_res) and cmd_res[index].strip() == "molecular complex prediction":
-                start = True
-            index += 1
         with open(self.res_path, 'w') as f:
-            for item in res:
-                f.write(item+'\n')
+            for item in cmd_res[2:]:
+                if len(item) and item[0] not in [str(item) for item in range(10)] and item[:9] != "molecular":
+                    f.write(item+'\n')
 
 
 def get_method(name):
@@ -105,6 +110,8 @@ def get_method(name):
         return mcode_method
     if name == "coach":
         return coach_method
+    if name == "graph_entropy":
+        return graph_entropy_method
     return None
 
 
@@ -123,7 +130,7 @@ def read_complexes(path):
     return res
 
 
-def main(method_name, edges_path,  result_path, expand, basedir="", recompute=False):
+def main(method_name, edges_path, result_path, expand, basedir="", recompute=False):
     if not (os.path.exists(result_path)) or recompute:
         methodor = get_method(method_name)
         meth = methodor(edges_path, result_path, expand, basedir)

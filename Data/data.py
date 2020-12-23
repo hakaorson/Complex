@@ -19,7 +19,7 @@ from sklearn import preprocessing
 from Data.refer import refermethods
 
 
-def get_datas(data_path):
+def read_feat_datas(data_path):
     ids, datas = [], []
     with open(data_path, 'r') as f:
         featsnames = [item.split('_')[0]
@@ -161,7 +161,7 @@ def merged_data(items):
 
 
 def complex_score(complexes, benchs):
-    af_matrix = [[0 for j in range(len(targets))]for i in range(
+    af_matrix = [[0 for j in range(len(benchs))]for i in range(
         len(complexes))]
     for i in range(len(complexes)):
         for j in range(len(benchs)):
@@ -243,8 +243,8 @@ class single_data:
 def get_global_nxgraph(node_path, edge_path, direct):
     print("reading graph")
     # 获取图数据
-    nodes, nodematrix, nodefeatnames = get_datas(node_path)
-    edges, edgematrix, edgefeatnames = get_datas(edge_path)
+    nodes, nodematrix, nodefeatnames = read_feat_datas(node_path)
+    edges, edgematrix, edgefeatnames = read_feat_datas(edge_path)
     edges = [list(item.split(' ')) for item in edges]
     nx_graph = nx.DiGraph()
     for index, item in enumerate(nodematrix):
@@ -278,9 +278,9 @@ def path_process(graphname, benchname, refername, basedir, direct):
     bench_path = basedir + "bench/{}/complexes".format(benchname)
     edges_path = basedir + "network/{}/edges".format(graphname)
     nodesfeat_path = basedir + \
-        "network/{}/nodes_feat_processed".format(graphname)
+        "network/{}/nodes_feat_final".format(graphname)
     edgesfeat_path = basedir + \
-        "network/{}/edges_feat_processed".format(graphname)
+        "network/{}/edges_feat_final".format(graphname)
     return train_datasets_path, refer_results_path, refer_results_expand_path, select_datasets_path, select_datasets_expand_path, pictures_dir, bench_path, edges_path, nodesfeat_path, edgesfeat_path
 
 
@@ -364,7 +364,7 @@ def trainmodel_datasets(recompute=False, direct=False, graphname="DIP", benchnam
     subgraphed_bench_data = subgraphs(origin_bench_data, nx_graph)
     refer_data = read_complexes(refer_results_path)
     random_data = get_random_graphs(
-        nx_graph, [len(item) for item in origin_bench_data], max(1000, len(subgraphed_bench_data)+len(refer_data)), multi=False)
+        nx_graph, [len(item) for item in origin_bench_data], min(1000, len(subgraphed_bench_data)+len(refer_data)), multi=False)
 
     # 接下来归并处理
     labeled_datas = add_labels_on_datas(
