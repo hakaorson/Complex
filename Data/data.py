@@ -385,9 +385,10 @@ def selectcomplex_datasets(recompute=False, direct=False, graphname="DIP", bench
                                           result_path=refer_results_expand_path, expand=True, basedir=basedir+"refer", recompute=recompute)
 
     if not recompute and os.path.exists(select_datasets_expand_path):
+        print('datasets exist, directly return refer datasets')
         result = reload_subgraphs(select_datasets_expand_path)
         return refer_data, expand_refer_data, result
-
+    print('recomputing refer datasets')
     nx_graph = get_global_nxgraph(nodesfeat_path, edgesfeat_path, direct)
     bench_data = read_complexes(bench_path)
     scores = complex_score(expand_refer_data, bench_data)

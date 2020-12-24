@@ -76,6 +76,8 @@ def train_classification(model, train_datas, val_datas, batchsize, path, epoch, 
             trainlosses, 0)) + 'val_loss:[{} {}]'.format(valcrossloss, valmseloss) + 'val metrix macro:{}'.format(val_metrix)
         logging.info(msg)
         print(msg)
+        logging.info(metrics.confusion_matrix(train_labels, train_maxindexs))
+        logging.info(metrics.confusion_matrix(val_labels, val_maxindexs))
         print("last train batch fusion")
         print(metrics.confusion_matrix(train_labels, train_maxindexs))
         print("val fusion")
@@ -122,24 +124,20 @@ def expand_selection(model, datas, batchsize):
     expand_data_loader = torch.utils.data.DataLoader(
         datas, batch_size=batchsize, shuffle=False, collate_fn=collate_long)  # 注意这里一定不能shuffle，否在数据就会不一致
     res = []
-    truescores = []
-    predictscores = []
+    truescores, predictscores = [], []
+    truelabels, predictlabels = [], []
     for index, (expand_graphs, expand_feats, expand_labels, expand_scores) in enumerate(expand_data_loader):
         class_prediction, score_prediction = model(expand_graphs, expand_feats)
-        class_prediction = torch.nn.Softmax()(class_prediction)
+        class_prediction = torch.nn.Softmax(dim=-1)(class_prediction)
         score_prediction = torch.squeeze(score_prediction)
         maxindexs = torch.argmax(class_prediction, -1).detach()
-        print("fusion {}\n".format(index),
-              metrics.confusion_matrix(expand_labels, maxindexs))
-        for index, predict_label in enumerate(maxindexs):
-            predict_score = score_prediction[index]
-            truescores.append(expand_scores[index])
-            predictscores.append(predict_score)
-            if predict_label == 0 or predict_score >= 0.25:
-                res.append(True)
-            else:
-                res.append(False)
-    return res, truescores, predictscores
+        # fusion = metrics.confusion_matrix(expand_labels, maxindexs)
+
+        truescores.extend(expand_scores)
+        predictscores.extend(score_prediction)
+        truelabels.extend(expand_labels)
+        predictlabels.extend(maxindexs)
+    return truescores, predictscores, truelabels, predictlabels
 
 
 if __name__ == "__main__":

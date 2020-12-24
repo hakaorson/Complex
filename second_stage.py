@@ -12,6 +12,7 @@ from Check import metrix
 import argparse
 import joblib
 import first_stage
+from sklearn import metrics
 
 
 class warpedmodel():
@@ -37,38 +38,49 @@ def CheckModel(args):
     datas = [[item.graph, item.feat, item.label, item.score]
              for item in datas]
     datas = first_stage.to_tensor(datas, args.cuda)
-    args.modelname = args.modelpath
     model = models.get_model(args)
     model.load_state_dict(torch.load(
-        "Model/saved_models/{}/{}.pt".format(args.modelpath, args.modelepoch)))
-    res, truescores, predictscores = flow.expand_selection(model, datas)
+        "Model/saved_models/{}/{}.pt".format(args.modelpath, args.modelepoch)), False)
+    truescores, predictscores, truelabels, predictlabels = flow.expand_selection(
+        model, datas, args.batchsize)
+
+    allres = []
+    allres.append(str(metrics.confusion_matrix(truelabels, predictlabels)))
     # 需要分析一下
     expand_datas_selected = []
     truescores_selected = []
     predictscores_selected = []
-    for index, val in enumerate(res):
-        if val:
+    for index in range(len(truescores)):
+        if predictlabels == 0 or predictscores[index] >= 0.20:
             expand_datas_selected.append(expand_datas[index])
             truescores_selected.append(truescores[index])
             predictscores_selected.append(predictscores[index])
-    predict_true_count = 0
-    for score in truescores_selected:
-        if score >= 0.25:
-            predict_true_count += 1
-    print(predict_true_count/len(predictscores_selected))
+    allres.append("before select total num:{}".format(len(normal_datas)))
+    normal_f1score = metrix.ClusterQualityF1_MMR(
+        bench_datas, normal_datas, metrix.NAAffinity, 0.25).score()
+    allres.append("recall precision f1 mmr:{}".format(normal_f1score))
+    normal_SNscore = metrix.ClusterQualitySN_PPV_Acc(
+        bench_datas, normal_datas).score()
+    allres.append("recall precision sn ppv acc:{}".format(normal_SNscore))
 
-    expand_f1computor = metrix.ClusterQualityF1(
-        bench_datas, expand_datas_selected, metrix.NAAffinity, 0.25)
-    expand_score = expand_f1computor.score()
-    print(expand_score)
+    allres.append("after select total num:{}".format(
+        len(expand_datas_selected)))
+    expand_f1score = metrix.ClusterQualityF1_MMR(
+        bench_datas, expand_datas_selected, metrix.NAAffinity, 0.25).score()
+    allres.append("recall precision f1 mmr:{}".format(expand_f1score))
+    expand_SNscore = metrix.ClusterQualitySN_PPV_Acc(
+        bench_datas, expand_datas_selected).score()
+    allres.append("recall precision sn ppv acc:{}".format(expand_SNscore))
 
-    normal_f1computor = metrix.ClusterQualityF1(
-        bench_datas, normal_datas, metrix.NAAffinity, 0.25)
-    normal_score = normal_f1computor.score()
-    print(normal_score)
+    result_path = "Data/datasets/predict_res/"+args.modelpath+"_"+args.refer
+    print(allres)
+    with open(result_path, 'w') as f:
+        for line in allres:
+            f.write(line+'\n')
 
 
 if __name__ == "__main__":
     args = first_stage.arg_parse()
     print(args)
     CheckModel(args)
+    # CheckModel(args)

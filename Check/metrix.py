@@ -1,5 +1,6 @@
 import collections
 import numpy as np
+import math
 
 
 class ItemAffinity():
@@ -74,18 +75,40 @@ class ClusterQuality():
         NotImplemented
 
 
-class ClusterQualityF1(ClusterQuality):
+class ClusterQualityF1_MMR(ClusterQuality):
     def __init__(self, cluster_bench, cluster_predict, affinity_method=None, threshold=None):
         super().__init__(cluster_bench, cluster_predict, affinity_method)
         self.threshold = threshold
 
     def score(self):
         np_matrix = np.array(self.affinity_matrix)
-        # print(np.max(np_matrix, 0)[:10])
+
+        mmrscores = np.mean(np.max(np_matrix, 1))
+
         bool_matrix = np_matrix >= self.threshold
         prec_matrix = np.sum(bool_matrix, 0) > 0  # 这个计算是不是有问题
         reca_matrix = np.sum(bool_matrix, 1) > 0
         precision = sum(prec_matrix)/len(prec_matrix)
         recall = sum(reca_matrix)/len(reca_matrix)
         f1 = 2*precision*recall/(precision+recall)
-        return(precision, recall, f1)
+        return(precision, recall, f1, mmrscores)
+
+
+class ClusterQualitySN_PPV_Acc(ClusterQuality):
+    def __init__(self, cluster_bench, cluster_predict, affinity_method=None, threshold=None):
+        super().__init__(cluster_bench, cluster_predict, CoocAffinity)
+        self.threshold = threshold
+
+    def score(self):
+        np_matrix = np.array(self.affinity_matrix)  # bench*predict
+        bench_matchedmax = np.max(np_matrix, 1)
+        sum_bench = sum([len(item) for item in self.cluster_bench])
+        sum_bench_matched = int(sum(bench_matchedmax))
+        sn_score = sum_bench_matched/sum_bench  # 每一个标准复合物各自最多被找到多少
+
+        predict_matchedmax = np.max(np_matrix, 1)
+        sum_predict_matched = int(sum(predict_matchedmax))
+        ppv_score = sum_predict_matched / \
+            np.sum(np_matrix)  # 每一个预测出来的复合物是不是具有特定性
+        acc_score = math.sqrt(sn_score*ppv_score)
+        return sn_score, ppv_score, acc_score

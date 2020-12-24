@@ -18,14 +18,14 @@ def arg_parse():
     '''
     parser = argparse.ArgumentParser(description='Train model arguments')
     parser.add_argument('--recompute', type=int, default=0)
-    parser.add_argument('--refer', type=str, default="coach")
-    parser.add_argument('--bench', type=str, default="CYC2008")
-    parser.add_argument('--graph', type=str, default="Krogan")
+    parser.add_argument('--refer', type=str)
+    parser.add_argument('--bench', type=str)
+    parser.add_argument('--graph', type=str)
     parser.add_argument('--rebalance', type=int, default=1)
     parser.add_argument('--split', type=float, default=0.8)
     parser.add_argument('--seed', type=int, default=666)
     parser.add_argument('--cuda', type=int, default=-1)
-    parser.add_argument('--epoch', type=int, default=30)
+    parser.add_argument('--epoch', type=int, default=80)
     parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--info', type=str, default="")
     parser.add_argument('--batchsize', type=int, default=32)
@@ -42,6 +42,7 @@ def arg_parse():
     parser.add_argument('--modelepoch', type=int)
     parser.add_argument('--sklearnmodel', type=int, default=0)
     return parser.parse_args()
+    # return parser.parse_args("--bench Other --graph Biogrid --refer dpclus --modelpath Fusion_GCN_with_Topologi_Other_Biogrid_coach_U_final_12_24_11_16 --modelepoch 30 --modelname Fusion_GCN_with_Topologi".split(' '))
     # return parser.parse_args("--refer coach --bench Other --graph DIP --info final --modelname Only_struct_GCN --recompute 1".split(' '))
 
 
@@ -51,30 +52,32 @@ python3 first_stage.py --refer coach --bench Other --graph Biogrid --info final 
 python3 first_stage.py --refer coach --bench Other --graph Biogrid --info final --modelname Only_Edge_feat_GCN --recompute 0
 python3 first_stage.py --refer coach --bench Other --graph Biogrid --info final --modelname Fusion_GCN --recompute 0
 python3 first_stage.py --refer coach --bench Other --graph Biogrid --info final --modelname Only_Topologi --recompute 0
+python3 first_stage.py --refer coach --bench Other --graph Biogrid --info final --modelname Fusion_GCN_with_Topologi --recompute 0
 python3 first_stage.py --refer coach --bench Other --graph Biogrid --info final --modelname GCN_with_Topologi_with_topk --recompute 0
 python3 first_stage.py --refer coach --bench Other --graph Biogrid --info final --modelname GCN_with_Topologi_with_max --recompute 0
 
 python3 first_stage.py --refer coach --bench Other --graph DIP --info final --modelname Only_struct_GCN --recompute 0
-python3 first_stage.py --refer coach --bench Other --graph DIP --info final --modelname Only_Node_feat_GCN --gcn_layers 0
+python3 first_stage.py --refer coach --bench Other --graph DIP --info final --modelname Only_Node_feat_GCN --gcn_layers 1 --recompute 0
 python3 first_stage.py --refer coach --bench Other --graph DIP --info final --modelname Only_Edge_feat_GCN --recompute 0
 python3 first_stage.py --refer coach --bench Other --graph DIP --info final --modelname Fusion_GCN --recompute 0
 python3 first_stage.py --refer coach --bench Other --graph DIP --info final --modelname Only_Topologi --recompute 0
+python3 first_stage.py --refer coach --bench Other --graph DIP --info final --modelname Fusion_GCN_with_Topologi --recompute 0
 python3 first_stage.py --refer coach --bench Other --graph DIP --info final --modelname GCN_with_Topologi_with_topk --recompute 0
 python3 first_stage.py --refer coach --bench Other --graph DIP --info final --modelname GCN_with_Topologi_with_max --recompute 0
 
 
-python3 second_stage.py --bench Other --graph Biogrid --refer clique_percolation --recompute 1
-python3 second_stage.py --bench Other --graph Biogrid --refer ipca --recompute 1
-python3 second_stage.py --bench Other --graph Biogrid --refer mcode --recompute 1
-python3 second_stage.py --bench Other --graph Biogrid --refer graph_entropy --recompute 1
-python3 second_stage.py --bench Other --graph Biogrid --refer dpclus --recompute 1
+python3 second_stage.py --bench Other --graph Biogrid --refer clique_percolation --recompute 0
+python3 second_stage.py --bench Other --graph Biogrid --refer ipca --recompute 0
+python3 second_stage.py --bench Other --graph Biogrid --refer mcode --recompute 0
+python3 second_stage.py --bench Other --graph Biogrid --refer graph_entropy --recompute 0
+python3 second_stage.py --bench Other --graph Biogrid --refer dpclus --recompute 0
 
 
-python3 second_stage.py --bench Other --graph DIP --refer clique_percolation --recompute 1
-python3 second_stage.py --bench Other --graph DIP --refer ipca --recompute 1
-python3 second_stage.py --bench Other --graph DIP --refer mcode --recompute 1
-python3 second_stage.py --bench Other --graph DIP --refer graph_entropy --recompute 1
-python3 second_stage.py --bench Other --graph DIP --refer dpclus --recompute 1
+python3 second_stage.py --bench Other --graph DIP --refer clique_percolation --recompute 0
+python3 second_stage.py --bench Other --graph DIP --refer ipca --recompute 0
+python3 second_stage.py --bench Other --graph DIP --refer mcode --recompute 0
+python3 second_stage.py --bench Other --graph DIP --refer graph_entropy --recompute 0
+python3 second_stage.py --bench Other --graph DIP --refer dpclus --recompute 0
 '''
 
 
